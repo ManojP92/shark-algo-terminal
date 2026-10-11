@@ -1,0 +1,43 @@
+{
+  "PAIR": "BTCUSDT",
+  "TF_5M": "5m",
+  "TF_15M": "15m",
+  "REGIME": {
+    "TRENDING": "TRENDING",
+    "RANGING": "RANGING",
+    "VOLATILE": "VOLATILE",
+    "UNCLEAR": "UNCLEAR"
+  },
+  "REGIME_THRESHOLDS": {
+    "ADX_TREND_MIN": 25,
+    "ADX_RANGE_MAX": 20,
+    "CHOP_TREND_MAX": 38,
+    "CHOP_RANGE_MIN": 61,
+    "ATR_RATIO_VOLATILE": 1.5
+  },
+  "PERIODS": {
+    "ADX": 14,
+    "ATR": 14,
+    "RSI": 14,
+    "CHOP": 14,
+    "ATR_AVERAGE": 20
+  },
+  "RISK_DEFAULTS": {
+    "RISK_PER_TRADE_PCT": 1,
+    "MAX_CONCURRENT_POSITIONS": 1,
+    "MAX_CONSECUTIVE_LOSSES": 3,
+    "DAILY_LOSS_LIMIT_PCT": 3,
+    "PAUSE_DURATION_MS": 3600000
+  },
+  "STRATEGIES": {
+    "FVG": "FVG",
+    "BREAKOUT": "BREAKOUT",
+    "REVERSAL": "REVERSAL",
+    "NONE": "NONE"
+  },
+  "SIGNAL": {
+    "LONG": "LONG",
+    "SHORT": "SHORT",
+    "NO_TRADE": "NO_TRADE"
+  }
+}

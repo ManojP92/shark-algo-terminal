@@ -1,0 +1,42 @@
+# Secrets — NEVER commit
+.env
+*.env
+*.env.local
+shark-algo-portal/.env
+
+# Dependencies
+node_modules/
+**/node_modules/
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Build outputs
+dist/
+**/dist/
+build/
+*.egg-info/
+
+# Databases & local data
+data/*.db
+data/*.sqlite3
+*.db-shm
+*.db-wal
+shark-algo-portal/data/*.db
+
+# Logs
+logs/
+**/logs/
+*.log
+
+# PM2 & OS
+.pm2/
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+# Root orphan
+/package.json

@@ -1,0 +1,31 @@
+{
+  "name": "shark-algo-portal-backend",
+  "version": "1.0.0",
+  "description": "Shark Exchange Algo Portal — Node.js Backend",
+  "type": "module",
+  "main": "server.mjs",
+  "scripts": {
+    "start": "node server.mjs",
+    "test:phase1": "node test_phase1.mjs",
+    "dev": "node --watch server.mjs"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "shark-exchange-sdk": "latest",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5",
+    "sql.js": "^1.12.0",
+    "node-telegram-bot-api": "^0.66.0",
+    "axios": "^1.7.3",
+    "winston": "^3.13.0",
+    "winston-daily-rotate-file": "^5.0.0",
+    "p-retry": "^6.2.0",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "pm2": "^5.4.2"
+  }
+}

@@ -1,0 +1,111 @@
+import React from 'react';
+import { Activity, ShieldAlert, Play, Pause, Zap, Wifi, WifiOff } from 'lucide-react';
+
+export default function Navbar({ status, connected, onPause, onResume, onFlatten }) {
+  const isRunning = status?.running && !status?.paused;
+  const isHalted = status?.risk?.halted;
+  const isLive = status?.mode === 'LIVE';
+
+  return (
+    <header className="bg-[#0e131f] border-b border-[#1b2336] px-4 py-3 sticky top-0 z-50">
+      <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+        {/* Left: Branding & Market */}
+        <div className="flex items-center space-x-4">
+          <div className="flex items-center space-x-2">
+            <span className="text-2xl">🦈</span>
+            <div>
+              <div className="flex items-center space-x-2">
+                <h1 className="font-bold text-lg tracking-wider text-white">SHARK<span className="text-[#00e5ff]">QUANT</span></h1>
+                <span className="text-xs px-2 py-0.5 rounded font-mono font-bold tracking-widest bg-[#172136] text-slate-300 border border-[#233150]">
+                  TERMINAL
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 font-mono">BTCUSDT • Shark Exchange Futures</p>
+            </div>
+          </div>
+
+          <div className="hidden sm:flex items-center pl-4 border-l border-[#1b2336] space-x-3 text-xs">
+            <div className="flex items-center space-x-1.5">
+              {connected ? (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                  <span className="text-slate-300 font-mono">WS ONLINE</span>
+                </>
+              ) : (
+                <>
+                  <span className="w-2 h-2 rounded-full bg-rose-500"></span>
+                  <span className="text-rose-400 font-mono">RECONNECTING</span>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Center: Live Strategy & Regime Badge */}
+        <div className="hidden md:flex items-center space-x-3 bg-[#090d16] px-3 py-1.5 rounded-lg border border-[#1b2336]">
+          <span className="text-[11px] text-slate-400 uppercase tracking-wider">Regime:</span>
+          <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded ${
+            status?.market?.regime === 'TRENDING'
+              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+              : status?.market?.regime === 'RANGING'
+              ? 'bg-sky-500/20 text-sky-400 border border-sky-500/30'
+              : status?.market?.regime === 'VOLATILE'
+              ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+              : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+          }`}>
+            {status?.market?.regime || 'DETECTION PENDING'}
+          </span>
+          <span className="text-slate-600">|</span>
+          <span className="text-[11px] text-slate-400">Strategy:</span>
+          <span className="text-xs text-slate-200 font-mono font-medium">Donchian(25) + ADX(14)</span>
+        </div>
+
+        {/* Right: Mode & Execution Controls */}
+        <div className="flex items-center space-x-3">
+          {/* Mode Pill */}
+          <div className={`px-2.5 py-1 rounded text-xs font-mono font-bold tracking-wide flex items-center space-x-1.5 ${
+            isLive 
+              ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40 shadow-lg shadow-rose-950/40' 
+              : 'bg-[#ffd600]/15 text-[#ffd600] border border-[#ffd600]/30'
+          }`}>
+            <span className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-rose-400 animate-ping' : 'bg-[#ffd600]'}`}></span>
+            <span>{isLive ? 'LIVE CAPITAL' : 'PAPER TRADING'}</span>
+          </div>
+
+          {/* Pause / Resume Button */}
+          {isRunning ? (
+            <button
+              onClick={onPause}
+              className="flex items-center space-x-1 px-3 py-1.5 bg-[#172136] hover:bg-[#202c46] text-amber-400 border border-[#283858] rounded text-xs font-medium transition cursor-pointer"
+            >
+              <Pause className="w-3.5 h-3.5" />
+              <span>Pause Bot</span>
+            </button>
+          ) : (
+            <button
+              onClick={onResume}
+              disabled={isHalted}
+              className="flex items-center space-x-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-xs font-medium transition disabled:opacity-50 cursor-pointer"
+            >
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>Resume Bot</span>
+            </button>
+          )}
+
+          {/* Emergency Kill-Switch Button */}
+          <button
+            onClick={() => {
+              if (window.confirm("⚠️ EMERGENCY FLATTEN: Instantly close all open BTC positions and halt bot?")) {
+                onFlatten();
+              }
+            }}
+            className="flex items-center space-x-1 px-3 py-1.5 bg-rose-600 hover:bg-rose-500 text-white rounded text-xs font-bold transition shadow-lg shadow-rose-900/30 cursor-pointer"
+          >
+            <ShieldAlert className="w-3.5 h-3.5" />
+            <span>FLATTEN ALL</span>
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+}
