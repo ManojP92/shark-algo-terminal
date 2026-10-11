@@ -195,19 +195,21 @@ class Executor:
         return df
 
     def get_equity(self) -> float:
-        """Fetch current USDT equity from exchange. Falls back to 10000 in PAPER."""
+        """Fetch current USDT equity from exchange. Falls back to capital_base in PAPER or on API failure."""
+        if MODE == "PAPER":
+            return float(self.rm.cfg.capital_base + self._stats.get("daily_pnl", 0.0))
         try:
             bal = self.client.get_balances()
             # Wallet response varies; try common keys
             if isinstance(bal, list):
                 for b in bal:
                     if b.get("asset", "").upper() in ("USDT", "USD"):
-                        return float(b.get("balance", b.get("availableBalance", 0)))
+                        return float(b.get("balance", b.get("availableBalance", self.rm.cfg.capital_base)))
             if isinstance(bal, dict):
-                return float(bal.get("balance", bal.get("availableBalance", 10000)))
+                return float(bal.get("balance", bal.get("availableBalance", self.rm.cfg.capital_base)))
         except Exception as err:
-            log.warning("get_equity failed (%s) — using fallback 10000", err)
-        return 10_000.0
+            log.warning("get_equity failed (%s) — using fallback %s", err, self.rm.cfg.capital_base)
+        return float(self.rm.cfg.capital_base)
 
     # ── Position management ────────────────────────────────────────────────────
 
@@ -469,6 +471,13 @@ class Executor:
             "running":     self._running,
             "strategy":    "Donchian Channel Breakout (25, 14)",
             "market":     self.latest_market,
+            "equity":     round(self.get_equity(), 2),
+            "wallet": {
+                "balance":      round(self.get_equity(), 2),
+                "currency":     "USDT",
+                "mode":         MODE,
+                "capital_base": self.rm.cfg.capital_base,
+            },
             "position":   {
                 "side":           self.position.side,
                 "symbol":         self.position.symbol,

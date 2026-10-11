@@ -182,6 +182,10 @@ export default function App() {
           stats={status?.stats}
           risk={status?.risk}
           market={status?.market}
+          wallet={status?.wallet}
+          equity={status?.equity}
+          mode={status?.mode}
+          capitalBase={status?.sizing?.capital_base}
         />
 
         {/* Center Grid: Chart (Left) & Widgets (Right) */}

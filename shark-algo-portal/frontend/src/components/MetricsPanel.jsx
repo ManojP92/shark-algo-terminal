@@ -1,14 +1,30 @@
 import React from 'react';
-import { TrendingUp, Award, AlertTriangle, ShieldCheck, Activity, DollarSign } from 'lucide-react';
+import { TrendingUp, Award, AlertTriangle, ShieldCheck, Activity, DollarSign, Wallet } from 'lucide-react';
 
-export default function MetricsPanel({ stats, risk, market }) {
+export default function MetricsPanel({ stats, risk, market, wallet, equity, mode, capitalBase }) {
   const dailyPnl = stats?.daily_pnl || 0;
   const isPnlPositive = dailyPnl >= 0;
   const lossStreak = risk?.consecutive_losses || 0;
   const isCooldown = risk?.cooldown_until && risk.cooldown_until > Date.now() / 1000;
+  const isLive = mode === 'LIVE';
+  const currentEquity = wallet?.balance ?? equity ?? capitalBase ?? 100.0;
 
   return (
-    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-4">
+    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-4">
+      {/* 0. Wallet Balance / Equity */}
+      <div className="bg-[#0e131f] border border-[#1b2336] rounded-xl p-3.5 shadow-lg">
+        <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
+          <span className="font-mono uppercase tracking-wider text-[11px]">Wallet Balance</span>
+          <Wallet className="w-3.5 h-3.5 text-[#00e5ff]" />
+        </div>
+        <div className="text-xl font-bold font-mono text-white">
+          ${currentEquity.toFixed(2)}
+        </div>
+        <span className="text-[10px] text-[#00e5ff] font-mono font-medium">
+          {isLive ? 'Live Futures' : 'Paper Wallet'} (USDT)
+        </span>
+      </div>
+
       {/* 1. Daily Realized P&L */}
       <div className="bg-[#0e131f] border border-[#1b2336] rounded-xl p-3.5 shadow-lg">
         <div className="flex items-center justify-between text-slate-400 text-xs mb-1">

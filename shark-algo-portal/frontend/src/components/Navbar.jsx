@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, ShieldAlert, Play, Pause, Zap, Wifi, WifiOff, Sparkles } from 'lucide-react';
+import { Activity, ShieldAlert, Play, Pause, Zap, Wifi, WifiOff, Sparkles, Wallet } from 'lucide-react';
 
 export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', onSymbolChange, onOpenBacktest, onPause, onResume, onFlatten }) {
   const isRunning = status?.running && !status?.paused;
@@ -7,6 +7,7 @@ export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', o
   const isLive = status?.mode === 'LIVE';
   const hasPosition = Boolean(status?.position);
   const activeSymbol = status?.symbol || currentSymbol || 'BTCUSDT';
+  const walletBalance = status?.wallet?.balance ?? status?.equity ?? status?.sizing?.capital_base ?? 100.0;
 
   const pairs = [
     { symbol: 'BTCUSDT', label: 'BTC/USDT', minCap: '$50+' },
@@ -102,6 +103,14 @@ export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', o
 
         {/* Right: Mode & Execution Controls */}
         <div className="flex items-center space-x-3">
+          {/* Wallet Balance Pill */}
+          <div className="flex items-center space-x-1.5 px-3 py-1 bg-[#090d16] border border-[#1d2942] rounded text-xs font-mono shadow-sm">
+            <Wallet className="w-3.5 h-3.5 text-[#00e5ff]" />
+            <span className="text-slate-400 font-medium">Wallet:</span>
+            <span className="font-bold text-white">${walletBalance.toFixed(2)}</span>
+            <span className="text-[10px] text-slate-500 font-normal">USDT</span>
+          </div>
+
           {/* Mode Pill */}
           <div className={`px-2.5 py-1 rounded text-xs font-mono font-bold tracking-wide flex items-center space-x-1.5 ${
             isLive 
@@ -109,7 +118,7 @@ export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', o
               : 'bg-[#ffd600]/15 text-[#ffd600] border border-[#ffd600]/30'
           }`}>
             <span className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-rose-400 animate-ping' : 'bg-[#ffd600]'}`}></span>
-            <span>{isLive ? 'LIVE CAPITAL' : 'PAPER TRADING'}</span>
+            <span>{isLive ? 'LIVE' : 'PAPER'}</span>
           </div>
 
           {/* Backtest & Monte Carlo Button */}
