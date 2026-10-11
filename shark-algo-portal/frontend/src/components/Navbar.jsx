@@ -98,7 +98,9 @@ export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', o
           </span>
           <span className="text-slate-600">|</span>
           <span className="text-[11px] text-slate-400">Strategy:</span>
-          <span className="text-xs text-slate-200 font-mono font-medium">Donchian(25) + ADX(14)</span>
+          <span className="text-xs text-[#00e5ff] font-mono font-bold">
+            {status?.strategy_title || status?.strategy || 'Donchian Breakout'}
+          </span>
         </div>
 
         {/* Right: Mode & Execution Controls */}

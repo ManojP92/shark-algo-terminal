@@ -120,7 +120,9 @@ class Executor:
         self.client   = SharkClient()
         self.rm       = RiskManager()
         self.tg       = TelegramAlerter(paper=(MODE == "PAPER"))
-        self.strategy = DonchianBreakoutStrategy()
+        from strategy import get_strategy
+        self.strategy_name = os.getenv("STRATEGY_NAME", "DONCHIAN").upper()
+        self.strategy = get_strategy(self.strategy_name)
         self.position: Optional[OpenPosition] = None
         self._running = True
         self._stats   = {"trades": 0, "wins": 0, "daily_pnl": 0.0}
@@ -138,10 +140,18 @@ class Executor:
         # Apply instrument defaults
         self._apply_instrument_config(self.symbol)
 
-        log.info("Executor starting | MODE=%s | SYMBOL=%s | INTERVAL=%s",
-                 MODE, self.symbol, INTERVAL)
-        self._log_event(f"Executor initialized in {MODE} mode for {self.symbol} ({INTERVAL})")
+        log.info("Executor starting | MODE=%s | SYMBOL=%s | INTERVAL=%s | STRATEGY=%s",
+                 MODE, self.symbol, INTERVAL, self.strategy_name)
+        self._log_event(f"Executor initialized in {MODE} mode for {self.symbol} ({INTERVAL}) with {self.strategy_name}")
         self.tg.bot_started(MODE, self.symbol)
+
+    def set_strategy(self, strat_name: str):
+        from strategy import get_strategy
+        self.strategy_name = strat_name.upper()
+        self.strategy = get_strategy(self.strategy_name)
+        log.info("Active strategy switched to %s (%s)", self.strategy_name, getattr(self.strategy, "name", self.strategy_name))
+        self._log_event(f"Strategy changed to {self.strategy_name}")
+        return True
 
     def _apply_instrument_config(self, sym: str):
         if sym in INSTRUMENT_CONFIGS:
@@ -469,7 +479,8 @@ class Executor:
             "interval":    INTERVAL,
             "instruments": INSTRUMENT_CONFIGS,
             "running":     self._running,
-            "strategy":    "Donchian Channel Breakout (25, 14)",
+            "strategy":        self.strategy_name,
+            "strategy_title":  getattr(self.strategy, "name", self.strategy_name),
             "market":     self.latest_market,
             "equity":     round(self.get_equity(), 2),
             "wallet": {

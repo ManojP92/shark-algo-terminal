@@ -34,6 +34,7 @@ export default function ControlPanel({ status, currentSymbol = 'BTCUSDT', onSymb
 
   // Sync state if backend updates
   useEffect(() => {
+    if (status?.strategy) setStrategy(status.strategy);
     if (status?.sizing) {
       if (status.sizing.sizing_mode) setSizingMode(status.sizing.sizing_mode);
       if (status.sizing.manual_lot_size) setManualLots(status.sizing.manual_lot_size);
@@ -41,7 +42,20 @@ export default function ControlPanel({ status, currentSymbol = 'BTCUSDT', onSymb
       if (status.sizing.risk_per_trade_pct) setRiskPct(status.sizing.risk_per_trade_pct);
       if (status.sizing.leverage) setLeverage(status.sizing.leverage);
     }
-  }, [status?.sizing]);
+  }, [status?.sizing, status?.strategy]);
+
+  const handleStrategyChange = async (newStrat) => {
+    setStrategy(newStrat);
+    try {
+      await fetch('/api/control/strategy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ strategy: newStrat }),
+      });
+    } catch (e) {
+      console.error('Failed to update strategy:', e);
+    }
+  };
 
   // Push updates to backend
   const pushSizingUpdate = async (overrides = {}) => {
@@ -132,6 +146,28 @@ export default function ControlPanel({ status, currentSymbol = 'BTCUSDT', onSymb
           >
             <span>{currentMode}</span>
           </button>
+        </div>
+
+        {/* Active Strategy Engine Selector */}
+        <div className="bg-[#090d16] p-2.5 rounded-xl border border-[#1b253b] mb-3">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-xs font-bold text-white flex items-center space-x-1.5">
+              <span>Active Strategy Engine</span>
+            </span>
+            <span className="text-[10px] font-mono text-[#00e5ff] bg-[#00e5ff]/10 px-1.5 py-0.5 rounded border border-[#00e5ff]/20">
+              {strategy}
+            </span>
+          </div>
+          <select
+            value={strategy}
+            onChange={(e) => handleStrategyChange(e.target.value)}
+            className="w-full bg-[#101726] border border-[#1c2a44] rounded-lg p-2 text-xs font-mono font-bold text-white focus:outline-none cursor-pointer"
+          >
+            <option value="DONCHIAN">🦈 Donchian Breakout (Trend Following)</option>
+            <option value="BOLLINGER_RSI">📊 Bollinger + RSI (Mean Reversion)</option>
+            <option value="SUPERTREND">⚡ Supertrend Momentum (Trend Rider)</option>
+            <option value="REGIME_ADAPTIVE">🧠 Regime-Adaptive Hybrid (Multi-Regime)</option>
+          </select>
         </div>
 
         {/* Quick Pair Selector */}

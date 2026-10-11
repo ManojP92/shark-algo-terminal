@@ -29,6 +29,7 @@ export default function BacktestModal({ isOpen, onClose, defaultPair = 'BTCUSDT'
   const [mcRuns, setMcRuns] = useState(500);
 
   // Strategy Tuning State & Presets
+  const [strategy, setStrategy] = useState('DONCHIAN');
   const [preset, setPreset] = useState('OPTIMIZED'); // 'OPTIMIZED', 'BALANCED', 'SCALPER', 'CUSTOM'
   const [showTuning, setShowTuning] = useState(false);
   const [dcPeriod, setDcPeriod] = useState(20);
@@ -80,6 +81,7 @@ export default function BacktestModal({ isOpen, onClose, defaultPair = 'BTCUSDT'
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          strategy,
           pair,
           interval,
           days: Number(days),
@@ -273,6 +275,37 @@ export default function BacktestModal({ isOpen, onClose, defaultPair = 'BTCUSDT'
 
         {/* Configuration Bar */}
         <div className="p-4 bg-[#090d16] border-b border-[#1b253b] space-y-3">
+          {/* Strategy Model Selector */}
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#151f33]">
+            <div className="flex items-center space-x-2">
+              <span className="text-[11px] font-mono text-slate-400 font-semibold flex items-center space-x-1">
+                <Layers className="w-3.5 h-3.5 text-[#00e5ff]" />
+                <span>Strategy Model:</span>
+              </span>
+              <div className="flex flex-wrap gap-1.5 text-xs font-mono">
+                {[
+                  { id: 'DONCHIAN', label: '🦈 Donchian Breakout', badge: 'TREND' },
+                  { id: 'BOLLINGER_RSI', label: '📊 Bollinger + RSI', badge: 'RANGE' },
+                  { id: 'SUPERTREND', label: '⚡ Supertrend Momentum', badge: 'RUNNER' },
+                  { id: 'REGIME_ADAPTIVE', label: '🧠 Regime-Adaptive Hybrid', badge: 'AUTO' },
+                ].map((s) => (
+                  <button
+                    key={s.id}
+                    onClick={() => setStrategy(s.id)}
+                    className={`px-2.5 py-1 rounded-lg border font-semibold transition cursor-pointer flex items-center space-x-1.5 ${
+                      strategy === s.id
+                        ? 'bg-[#00e5ff]/20 text-[#00e5ff] border-[#00e5ff]/50 shadow-sm shadow-[#00e5ff]/20'
+                        : 'bg-[#101726] text-slate-400 border-[#1c2942] hover:text-white'
+                    }`}
+                  >
+                    <span>{s.label}</span>
+                    <span className="text-[9px] px-1 py-0.2 bg-[#1b273e] text-[#00e5ff] rounded font-bold">{s.badge}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
           {/* Preset Selection & Tuning Toggle */}
           <div className="flex flex-wrap items-center justify-between gap-2 pb-2 border-b border-[#151f33]">
             <div className="flex items-center space-x-2">

@@ -1,19 +1,19 @@
 """
 backtester.py
 ──────────────────────────────────────────────────────────────────────────────
-Institutional Backtesting & Monte Carlo Engine for Donchian Breakout Strategy.
+Institutional Multi-Strategy Backtesting & Monte Carlo Engine.
+
+Supported Strategies:
+  1. DONCHIAN (Donchian Channel 20 + ADX 22 Momentum Breakout)
+  2. BOLLINGER_RSI (Bollinger Bands 20, 2.0 + RSI 14 Mean Reversion with Midline TP)
+  3. SUPERTREND (Supertrend 10, 3.0 + EMA Trend Momentum)
+  4. REGIME_ADAPTIVE (Multi-Regime Hybrid: Trend Breakout in Trends, Mean Reversion in Ranges)
 
 Features:
-  1. Bar-by-bar historical event simulation with intra-bar SL execution
-  2. Exchange-accurate contract constraints (minQty, stepSize, minNotional)
-  3. Dynamic capital compounding & risk-based lot sizing
-  4. 1:1 R partial scale-out and ratcheting trailing stop
-  5. Realistic exchange fee modeling (e.g. 0.05% taker fee)
-  6. Monte Carlo bootstrap simulation (500-1000 iterations)
-     - Probability of Profit
-     - Value-at-Risk (P5 / P95 confidence intervals)
-     - Max Drawdown distribution
-     - Multi-path equity cone curves for charting
+  • Bar-by-bar historical simulation with intra-bar SL & TP execution
+  • Exchange-accurate contract constraints (minQty, stepSize, minNotional)
+  • Compounding equity calculation & fee modeling (0.05% taker)
+  • 500-run Monte Carlo Bootstrap Resampling (P5, P50, P95 cones & VaR)
 ──────────────────────────────────────────────────────────────────────────────
 """
 
@@ -27,12 +27,13 @@ from typing import Optional, List, Dict, Any
 import numpy as np
 import pandas as pd
 
-from strategy.donchian_breakout import (
+from strategy import (
+    get_strategy,
     DonchianBreakoutStrategy,
+    BollingerRsiStrategy,
+    SupertrendMomentumStrategy,
+    RegimeAdaptiveStrategy,
     TrailingState,
-    compute_donchian,
-    compute_atr,
-    compute_adx,
 )
 
 
@@ -55,34 +56,35 @@ class BacktestTrade:
 
 def run_backtest(
     df: pd.DataFrame,
+    strategy_name: str = "DONCHIAN",
     initial_capital: float = 100.0,
     risk_pct: float = 1.0,
     leverage: int = 10,
     min_qty: float = 0.001,
     step_size: float = 0.001,
     min_notional: float = 115.0,
-    dc_period: int = 25,
-    adx_min: float = 20.0,
-    atr_mult_sl: float = 1.5,
+    dc_period: int = 20,
+    adx_min: float = 22.0,
+    atr_mult_sl: float = 1.2,
     atr_mult_trail: float = 3.0,
     fee_pct: float = 0.05,        # 0.05% taker fee
-    enable_scale_out: bool = True,
+    enable_scale_out: bool = False,
 ) -> Dict[str, Any]:
     """
-    Run bar-by-bar backtest of Donchian Breakout Strategy.
+    Run bar-by-bar backtest of selected strategy over historical candles.
     """
-    if len(df) < dc_period + 14:
-        raise ValueError(f"Insufficient candles: {len(df)} bars provided, need at least {dc_period + 14}")
+    strat_key = (strategy_name or "DONCHIAN").strip().upper()
+    if len(df) < dc_period + 20:
+        raise ValueError(f"Insufficient candles: {len(df)} bars provided, need at least {dc_period + 20}")
 
-    strat = DonchianBreakoutStrategy(
+    strat = get_strategy(
+        strat_key,
         dc_period=dc_period,
         adx_min=adx_min,
         atr_mult_sl=atr_mult_sl,
         atr_mult_trail=atr_mult_trail,
     )
-    if "dc_upper" not in df.columns or df.attrs.get("dc_period") != dc_period:
-        df = strat.compute_indicators(df)
-        df.attrs["dc_period"] = dc_period
+    df = strat.compute_indicators(df)
 
     equity = float(initial_capital)
     peak_equity = equity
@@ -95,6 +97,8 @@ def run_backtest(
     pos_qty = 0.0
     pos_entry = 0.0
     pos_sl = 0.0
+    pos_tp = 0.0
+    pos_strat_type = ""
     pos_trail_state: Optional[TrailingState] = None
     pos_scaled_out = False
     pos_entry_time = ""
@@ -108,19 +112,29 @@ def run_backtest(
         "drawdown_pct": 0.0,
     })
 
-    # Extract arrays for ultra-fast indexing
+    # Extract price arrays for high-speed indexing
     timestamps = [str(t) for t in df["timestamp"].values]
     opens = df["open"].values
     highs = df["high"].values
     lows = df["low"].values
     closes = df["close"].values
-    dc_ups = df["dc_upper"].values
-    dc_los = df["dc_lower"].values
-    atrs = df["atr"].values
-    adxs = df["adx"].values
+    atrs = df["atr"].values if "atr" in df.columns else np.full(len(df), 1.0)
+    adxs = df["adx"].values if "adx" in df.columns else np.full(len(df), 25.0)
 
-    # Warmup loop: start after indicators are valid
-    start_idx = max(dc_period, 15)
+    # Strategy-specific arrays
+    dc_ups = df["dc_upper"].values if "dc_upper" in df.columns else None
+    dc_los = df["dc_lower"].values if "dc_lower" in df.columns else None
+
+    bb_mids = df["bb_mid"].values if "bb_mid" in df.columns else None
+    bb_ups = df["bb_upper"].values if "bb_upper" in df.columns else None
+    bb_los = df["bb_lower"].values if "bb_lower" in df.columns else None
+    rsis = df["rsi"].values if "rsi" in df.columns else None
+
+    sts = df["st"].values if "st" in df.columns else None
+    st_dirs = df["st_dir"].values if "st_dir" in df.columns else None
+    emas = df["ema_trend"].values if "ema_trend" in df.columns else None
+
+    start_idx = max(dc_period, 30)
 
     for i in range(start_idx, len(df)):
         timestamp = timestamps[i]
@@ -129,13 +143,9 @@ def run_backtest(
         l = float(lows[i])
         c = float(closes[i])
 
-        # Prior bar indicators for clean no-lookahead signal
-        prev_dc_up = float(dc_ups[i - 1])
-        prev_dc_lo = float(dc_los[i - 1])
-        prev_atr = float(atrs[i - 1])
-        prev_adx = float(adxs[i - 1])
+        prev_atr = float(atrs[i - 1]) if not math.isnan(atrs[i - 1]) else 1.0
+        prev_adx = float(adxs[i - 1]) if not math.isnan(adxs[i - 1]) else 20.0
         prev_close = float(closes[i - 1])
-
         cur_atr = float(atrs[i]) if not math.isnan(atrs[i]) else prev_atr
 
         # ── 1. Check Exit for Open Position ──────────────────────────────────
@@ -144,17 +154,36 @@ def run_backtest(
             exit_price = 0.0
             exit_reason = ""
 
-            # Intra-bar stop check
+            # Check Intra-bar Stop Loss
             if pos_side == "LONG":
                 if l <= pos_sl:
                     exit_triggered = True
-                    exit_price = min(o, pos_sl)  # gap protection
+                    exit_price = min(o, pos_sl)
                     exit_reason = "Stop Loss Hit"
             elif pos_side == "SHORT":
                 if h >= pos_sl:
                     exit_triggered = True
                     exit_price = max(o, pos_sl)
                     exit_reason = "Stop Loss Hit"
+
+            # Check Take Profit for Mean Reversion trades (Bollinger Midline)
+            if not exit_triggered and pos_tp > 0:
+                if pos_side == "LONG" and h >= pos_tp:
+                    exit_triggered = True
+                    exit_price = max(o, pos_tp)
+                    exit_reason = "Take Profit (BB Midline Reversion)"
+                elif pos_side == "SHORT" and l <= pos_tp:
+                    exit_triggered = True
+                    exit_price = min(o, pos_tp)
+                    exit_reason = "Take Profit (BB Midline Reversion)"
+
+            # Check Supertrend reversal
+            if not exit_triggered and strat_key in ("SUPERTREND", "SUPERTREND_MOMENTUM") and st_dirs is not None:
+                cur_st_dir = int(st_dirs[i - 1])
+                if (pos_side == "LONG" and cur_st_dir == -1) or (pos_side == "SHORT" and cur_st_dir == 1):
+                    exit_triggered = True
+                    exit_price = o
+                    exit_reason = "Supertrend Reversal Flip"
 
             # Optional 50% scale-out at 1:1 R
             if in_pos and not exit_triggered and enable_scale_out and not pos_scaled_out:
@@ -215,31 +244,72 @@ def run_backtest(
                 trade_id_counter += 1
 
         # ── 2. Check Entry if Flat ───────────────────────────────────────────
-        if not in_pos and not math.isnan(prev_dc_up) and not math.isnan(prev_atr) and not math.isnan(prev_adx):
+        if not in_pos and not math.isnan(prev_atr):
             sig_side = ""
-            if prev_close > prev_dc_up and prev_adx >= adx_min:
-                sig_side = "LONG"
-            elif prev_close < prev_dc_lo and prev_adx >= adx_min:
-                sig_side = "SHORT"
+            entry_tp = 0.0
+            trade_sub_type = strat_key
 
+            # ── A. Donchian Channel Breakout
+            if strat_key in ("DONCHIAN", "DONCHIAN_BREAKOUT") and dc_ups is not None and dc_los is not None:
+                if prev_close > dc_ups[i - 1] and prev_adx >= adx_min:
+                    sig_side = "LONG"
+                elif prev_close < dc_los[i - 1] and prev_adx >= adx_min:
+                    sig_side = "SHORT"
+
+            # ── B. Bollinger + RSI Mean Reversion
+            elif strat_key in ("BOLLINGER_RSI", "BOLLINGER_REVERSION") and bb_ups is not None and rsis is not None:
+                if prev_close <= (bb_los[i - 1] * 1.002) and rsis[i - 1] <= 38.0 and prev_adx < 28.0:
+                    sig_side = "LONG"
+                    entry_tp = float(bb_mids[i - 1])
+                elif prev_close >= (bb_ups[i - 1] * 0.998) and rsis[i - 1] >= 62.0 and prev_adx < 28.0:
+                    sig_side = "SHORT"
+                    entry_tp = float(bb_mids[i - 1])
+
+            # ── C. Supertrend Momentum
+            elif strat_key in ("SUPERTREND", "SUPERTREND_MOMENTUM") and st_dirs is not None:
+                prev_dir = int(st_dirs[i - 1])
+                prev2_dir = int(st_dirs[i - 2])
+                if prev_dir == 1 and prev2_dir != 1 and prev_adx >= 18.0:
+                    sig_side = "LONG"
+                elif prev_dir == -1 and prev2_dir != -1 and prev_adx >= 18.0:
+                    sig_side = "SHORT"
+
+            # ── D. Regime-Adaptive Hybrid
+            elif strat_key in ("REGIME_ADAPTIVE", "ADAPTIVE_HYBRID"):
+                # Regime 1: Trending
+                if prev_adx >= 22.0 and dc_ups is not None:
+                    if prev_close > dc_ups[i - 1]:
+                        sig_side = "LONG"
+                        trade_sub_type = "TREND_BREAKOUT"
+                    elif prev_close < dc_los[i - 1]:
+                        sig_side = "SHORT"
+                        trade_sub_type = "TREND_BREAKOUT"
+                # Regime 2: Ranging
+                elif prev_adx <= 20.0 and bb_ups is not None and rsis is not None:
+                    if prev_close <= (bb_los[i - 1] * 1.002) and rsis[i - 1] <= 38.0:
+                        sig_side = "LONG"
+                        entry_tp = float(bb_mids[i - 1])
+                        trade_sub_type = "RANGE_REVERSION"
+                    elif prev_close >= (bb_ups[i - 1] * 0.998) and rsis[i - 1] >= 62.0:
+                        sig_side = "SHORT"
+                        entry_tp = float(bb_mids[i - 1])
+                        trade_sub_type = "RANGE_REVERSION"
+
+            # ── Sizing & Execution
             if sig_side:
-                # Dynamic Position Sizing based on risk
                 risk_amount = equity * (risk_pct / 100.0)
                 sl_dist = atr_mult_sl * prev_atr
 
                 if sl_dist > 0:
                     raw_qty = risk_amount / sl_dist
-                    # Quantize to step size
                     steps = round(raw_qty / step_size)
                     sized_qty = max(min_qty, round(steps * step_size, 4))
 
-                    # Check exchange notional threshold
                     notional = sized_qty * o
                     if notional < min_notional:
                         sized_qty = round(math.ceil(min_notional / o / step_size) * step_size, 4)
                         notional = sized_qty * o
 
-                    # Cap at available margin buffer (max 90% equity used for margin)
                     margin_req = notional / leverage
                     max_allowed_margin = equity * 0.90
                     if margin_req > max_allowed_margin and equity > 2:
@@ -254,6 +324,8 @@ def run_backtest(
                         pos_qty = sized_qty
                         pos_entry_time = timestamp
                         pos_scaled_out = False
+                        pos_tp = entry_tp
+                        pos_strat_type = trade_sub_type
 
                         if sig_side == "LONG":
                             pos_sl = o - sl_dist
@@ -274,7 +346,6 @@ def run_backtest(
         peak_equity = max(peak_equity, equity)
         dd_pct = ((peak_equity - equity) / peak_equity) * 100 if peak_equity > 0 else 0.0
 
-        # Sample equity curve every 4 bars (to keep payload concise) or at end
         if i % 4 == 0 or i == len(df) - 1:
             equity_curve.append({
                 "time": timestamp,
@@ -324,11 +395,11 @@ def run_backtest(
     roi_pct = (net_pnl / initial_capital) * 100
 
     max_dd_pct = max([p["drawdown_pct"] for p in equity_curve]) if equity_curve else 0.0
-
     trade_returns = [t["net_pnl"] for t in trades]
 
     return {
         "summary": {
+            "strategy": strat_key,
             "initial_capital": round(initial_capital, 2),
             "final_equity": round(equity, 2),
             "net_pnl": round(net_pnl, 2),
@@ -357,9 +428,7 @@ def run_monte_carlo(
     num_trades_projection: Optional[int] = None,
 ) -> Dict[str, Any]:
     """
-    Monte Carlo Bootstrap Resampling:
-    Resamples trade outcomes across `num_simulations` iterations to compute
-    confidence intervals (5th, 50th, 95th percentiles) and drawdown risk.
+    Monte Carlo Bootstrap Resampling Engine.
     """
     if not trade_returns:
         return {
@@ -379,7 +448,6 @@ def run_monte_carlo(
     simulated_paths: List[List[float]] = []
 
     for sim_idx in range(num_simulations):
-        # Sample trades with replacement
         sampled = random.choices(trade_returns, k=n_trades)
         equity = initial_capital
         peak = equity
@@ -387,7 +455,7 @@ def run_monte_carlo(
         path = [round(equity, 2)]
 
         for pnl in sampled:
-            equity = max(0.5, equity + pnl)  # clamp to avoid total 0
+            equity = max(0.5, equity + pnl)
             peak = max(peak, equity)
             dd = ((peak - equity) / peak) * 100
             max_dd = max(max_dd, dd)
@@ -414,9 +482,6 @@ def run_monte_carlo(
     profitable_count = sum(1 for eq in final_equities if eq >= initial_capital)
     prob_profit = (profitable_count / num_simulations) * 100
 
-    # Pick 8 representative paths for rendering in frontend chart:
-    # 5th percentile path, Median path, 95th percentile path, and 5 random paths
-    # Sort paths by their final equity
     indexed_paths = sorted(enumerate(simulated_paths), key=lambda x: x[1][-1])
     sample_indices = [
         p5_idx,
@@ -425,7 +490,6 @@ def run_monte_carlo(
         int(0.75 * num_simulations),
         p95_idx,
     ]
-    # Add a few random ones
     for _ in range(3):
         sample_indices.append(random.randint(0, num_simulations - 1))
 

@@ -262,7 +262,22 @@ def update_sizing(req: SizingRequest):
 
 # ── Backtesting & Monte Carlo ────────────────────────────────────────────────
 
+class StrategyRequest(BaseModel):
+    strategy: str  # "DONCHIAN", "BOLLINGER_RSI", "SUPERTREND", "REGIME_ADAPTIVE"
+
+
+@app.post("/api/control/strategy")
+def change_strategy(req: StrategyRequest):
+    global _executor
+    strat = req.strategy.upper()
+    if _executor:
+        _executor.set_strategy(strat)
+    log.info("Active trading strategy set to %s", strat)
+    return {"ok": True, "strategy": strat}
+
+
 class BacktestRequest(BaseModel):
+    strategy: Optional[str] = "DONCHIAN"
     pair: Optional[str] = "BTCUSDT"
     interval: Optional[str] = "15m"
     days: Optional[int] = 14
@@ -315,6 +330,7 @@ def execute_backtest(req: BacktestRequest):
 
         bt_result = run_backtest(
             df=df,
+            strategy_name=req.strategy or "DONCHIAN",
             initial_capital=req.capital or 100.0,
             risk_pct=req.risk_pct or 1.0,
             leverage=req.leverage or 10,
