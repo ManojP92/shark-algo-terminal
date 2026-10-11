@@ -51,7 +51,7 @@ logging.basicConfig(
 
 # ── Config ────────────────────────────────────────────────────────────────────
 SYMBOL          = os.getenv("TRADING_PAIR", "BTCUSDT")
-INTERVAL        = os.getenv("STRATEGY_INTERVAL", "5m")
+INTERVAL        = os.getenv("STRATEGY_INTERVAL", "15m")
 POLL_SECONDS    = int(os.getenv("POLL_SECONDS", "30"))   # check frequency
 KLINES_LIMIT    = 300    # enough for warmup (DC=25, ADX=14, ATR=14 → need ~60+)
 NODE_URL        = os.getenv("NODE_URL", "http://localhost:3001")

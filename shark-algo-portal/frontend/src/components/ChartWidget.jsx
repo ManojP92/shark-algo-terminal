@@ -12,7 +12,7 @@ export default function ChartWidget({ position, market, symbol = 'BTCUSDT' }) {
   const entryLineRef = useRef(null);
   const slLineRef = useRef(null);
 
-  const [timeframe, setTimeframe] = useState('5m');
+  const [timeframe, setTimeframe] = useState('15m');
   const [loading, setLoading] = useState(true);
   const [lastPrice, setLastPrice] = useState(null);
 
@@ -228,7 +228,7 @@ export default function ChartWidget({ position, market, symbol = 'BTCUSDT' }) {
         {/* Chart Tools & Timeframe */}
         <div className="flex items-center space-x-2">
           <div className="flex bg-[#090d16] p-0.5 rounded-lg border border-[#1b2336]">
-            {['5m', '15m'].map((tf) => (
+            {['5m', '15m', '1h'].map((tf) => (
               <button
                 key={tf}
                 onClick={() => setTimeframe(tf)}
