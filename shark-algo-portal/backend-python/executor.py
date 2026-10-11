@@ -137,9 +137,12 @@ class Executor:
             "regime": "UNCLEAR",
         }
 
-        self.mode = MODE
-        self.client.live = (self.mode == "LIVE")
-        self.client.dry_run = (self.mode != "LIVE")
+        # FAIL-SAFE SAFETY: The engine ALWAYS starts up in PAPER mode on server restart.
+        # Live trading requires explicit, intentional activation from the dashboard.
+        self.mode = "PAPER"
+        self.client.live = False
+        self.client.dry_run = True
+        self.tg.paper = True
         self.paper_wallet = float(self.rm.cfg.capital_base)
 
         # Apply instrument defaults

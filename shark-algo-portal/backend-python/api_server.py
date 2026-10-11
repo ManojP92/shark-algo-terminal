@@ -519,9 +519,10 @@ async def websocket_endpoint(ws: WebSocket):
 def startup():
     global _executor, _executor_thread
     _executor = Executor()
+    _executor.set_mode("PAPER")
     _executor_thread = threading.Thread(target=_executor.run, daemon=True)
     _executor_thread.start()
-    log.info("Executor thread started")
+    log.info("Executor thread started (FAIL-SAFE: Always initialized in PAPER mode)")
 
 
 if __name__ == "__main__":
