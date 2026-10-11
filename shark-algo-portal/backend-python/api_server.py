@@ -269,10 +269,11 @@ class BacktestRequest(BaseModel):
     capital: Optional[float] = 100.0
     risk_pct: Optional[float] = 1.0
     leverage: Optional[int] = 10
-    dc_period: Optional[int] = 25
-    adx_min: Optional[float] = 20.0
-    atr_mult_sl: Optional[float] = 1.5
+    dc_period: Optional[int] = 20
+    adx_min: Optional[float] = 22.0
+    atr_mult_sl: Optional[float] = 1.2
     atr_mult_trail: Optional[float] = 3.0
+    enable_scale_out: Optional[bool] = False
     monte_carlo_runs: Optional[int] = 500
 
 
@@ -320,10 +321,11 @@ def execute_backtest(req: BacktestRequest):
             min_qty=min_qty,
             step_size=step_size,
             min_notional=min_notional,
-            dc_period=req.dc_period or 25,
-            adx_min=req.adx_min or 20.0,
-            atr_mult_sl=req.atr_mult_sl or 1.5,
-            atr_mult_trail=req.atr_mult_trail or 3.0,
+            dc_period=req.dc_period if req.dc_period is not None else 20,
+            adx_min=req.adx_min if req.adx_min is not None else 22.0,
+            atr_mult_sl=req.atr_mult_sl if req.atr_mult_sl is not None else 1.2,
+            atr_mult_trail=req.atr_mult_trail if req.atr_mult_trail is not None else 3.0,
+            enable_scale_out=req.enable_scale_out if req.enable_scale_out is not None else False,
         )
 
         trade_returns = [t["net_pnl"] for t in bt_result["trades"]]

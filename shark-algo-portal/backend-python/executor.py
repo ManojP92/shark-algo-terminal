@@ -322,8 +322,9 @@ class Executor:
             if self.position is not None:
                 atr_now = atr_val
 
-                # Optional 50% scale-out at 1:1 R
-                if not self.position.scaled_out:
+                # Optional 50% scale-out at 1:1 R (disabled by default to let winners run for 3R-5R gains)
+                enable_scale_out = os.getenv("ENABLE_SCALE_OUT", "false").lower() == "true"
+                if enable_scale_out and not self.position.scaled_out:
                     if self.strategy.should_scale_out(
                         self.position.side, self.position.entry,
                         self.position.trail_state.trail_sl, close

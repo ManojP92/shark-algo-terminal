@@ -80,7 +80,9 @@ def run_backtest(
         atr_mult_sl=atr_mult_sl,
         atr_mult_trail=atr_mult_trail,
     )
-    df = strat.compute_indicators(df)
+    if "dc_upper" not in df.columns or df.attrs.get("dc_period") != dc_period:
+        df = strat.compute_indicators(df)
+        df.attrs["dc_period"] = dc_period
 
     equity = float(initial_capital)
     peak_equity = equity
@@ -106,27 +108,35 @@ def run_backtest(
         "drawdown_pct": 0.0,
     })
 
+    # Extract arrays for ultra-fast indexing
+    timestamps = [str(t) for t in df["timestamp"].values]
+    opens = df["open"].values
+    highs = df["high"].values
+    lows = df["low"].values
+    closes = df["close"].values
+    dc_ups = df["dc_upper"].values
+    dc_los = df["dc_lower"].values
+    atrs = df["atr"].values
+    adxs = df["adx"].values
+
     # Warmup loop: start after indicators are valid
     start_idx = max(dc_period, 15)
 
     for i in range(start_idx, len(df)):
-        bar = df.iloc[i]
-        prev_bar = df.iloc[i - 1]
-
-        timestamp = str(bar.get("timestamp", ""))
-        o = float(bar["open"])
-        h = float(bar["high"])
-        l = float(bar["low"])
-        c = float(bar["close"])
+        timestamp = timestamps[i]
+        o = float(opens[i])
+        h = float(highs[i])
+        l = float(lows[i])
+        c = float(closes[i])
 
         # Prior bar indicators for clean no-lookahead signal
-        prev_dc_up = float(prev_bar["dc_upper"])
-        prev_dc_lo = float(prev_bar["dc_lower"])
-        prev_atr = float(prev_bar["atr"])
-        prev_adx = float(prev_bar["adx"])
-        prev_close = float(prev_bar["close"])
+        prev_dc_up = float(dc_ups[i - 1])
+        prev_dc_lo = float(dc_los[i - 1])
+        prev_atr = float(atrs[i - 1])
+        prev_adx = float(adxs[i - 1])
+        prev_close = float(closes[i - 1])
 
-        cur_atr = float(bar["atr"]) if not math.isnan(bar["atr"]) else prev_atr
+        cur_atr = float(atrs[i]) if not math.isnan(atrs[i]) else prev_atr
 
         # ── 1. Check Exit for Open Position ──────────────────────────────────
         if in_pos:

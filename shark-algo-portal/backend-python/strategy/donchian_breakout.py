@@ -31,12 +31,12 @@ import numpy as np
 import pandas as pd
 
 # ── Strategy parameters (can be overridden via constructor) ───────────────────
-DEFAULT_DC_PERIOD    = 25      # Donchian Channel lookback
+DEFAULT_DC_PERIOD    = 20      # Optimized Donchian Channel lookback (was 25)
 DEFAULT_ADX_PERIOD   = 14      # ADX period
 DEFAULT_ATR_PERIOD   = 14      # ATR period
-DEFAULT_ADX_MIN      = 20.0    # minimum ADX to permit entry
-DEFAULT_ATR_MULT_SL  = 1.5     # initial stop distance = 1.5×ATR
-DEFAULT_ATR_MULT_TRAIL = 3.0   # trailing stop distance = 3.0×ATR
+DEFAULT_ADX_MIN      = 22.0    # Optimized momentum filter (filters sideways chop, was 20.0)
+DEFAULT_ATR_MULT_SL  = 1.2     # Optimized tighter initial stop (was 1.5×ATR)
+DEFAULT_ATR_MULT_TRAIL = 3.0   # Trailing stop distance = 3.0×ATR (lets trends run)
 
 Signal = Literal["LONG", "SHORT", "NO_TRADE"]
 
