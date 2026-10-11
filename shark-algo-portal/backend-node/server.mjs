@@ -49,7 +49,8 @@ app.get('/api/klines/:interval', async (req, res) => {
   try {
     const { interval } = req.params;
     const limit = parseInt(req.query.limit ?? '200', 10);
-    const data  = await fetchKlines({ interval, limit });
+    const pair  = req.query.pair ?? process.env.TRADING_PAIR ?? 'BTCUSDT';
+    const data  = await fetchKlines({ pair, interval, limit });
     res.json({ ok: true, data });
   } catch (err) {
     res.status(500).json({ ok: false, error: err.message });

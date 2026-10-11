@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createChart, ColorType } from 'lightweight-charts';
 import { RefreshCw, TrendingUp, BarChart2 } from 'lucide-react';
 
-export default function ChartWidget({ position, market }) {
+export default function ChartWidget({ position, market, symbol = 'BTCUSDT' }) {
   const chartContainerRef = useRef(null);
   const chartRef = useRef(null);
   const candleSeriesRef = useRef(null);
@@ -106,7 +106,7 @@ export default function ChartWidget({ position, market }) {
   const loadCandles = async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/candles/${timeframe}?limit=250`);
+      const res = await fetch(`/api/candles/${timeframe}?symbol=${symbol}&limit=250`);
       const body = await res.json();
       if (body.ok && Array.isArray(body.data)) {
         const sorted = [...body.data].sort((a, b) => Number(a.startTime) - Number(b.startTime));
@@ -163,7 +163,7 @@ export default function ChartWidget({ position, market }) {
     loadCandles();
     const interval = setInterval(loadCandles, 15000); // refresh every 15s
     return () => clearInterval(interval);
-  }, [timeframe]);
+  }, [timeframe, symbol]);
 
   // Overlay trade position lines (Entry & Trailing SL)
   useEffect(() => {
@@ -210,14 +210,16 @@ export default function ChartWidget({ position, market }) {
       <div className="flex flex-wrap items-center justify-between gap-3 mb-3 pb-3 border-b border-[#1b2336]">
         <div className="flex items-center space-x-3">
           <div className="flex items-center space-x-1.5">
-            <span className="font-bold text-base text-white">BTC / USDT</span>
+            <span className="font-bold text-base text-white">
+              {symbol.replace('USDT', ' / USDT')}
+            </span>
             <span className="text-xs text-slate-400 font-mono">Perpetual</span>
           </div>
 
-          {lastPrice && (
+          {lastPrice !== null && (
             <div className="flex items-center space-x-2 pl-3 border-l border-[#1b2336]">
               <span className="text-lg font-mono font-bold text-white">
-                ${lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                ${lastPrice.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 4 })}
               </span>
             </div>
           )}

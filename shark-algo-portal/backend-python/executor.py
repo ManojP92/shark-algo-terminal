@@ -76,12 +76,47 @@ class OpenPosition:
     open_time:   str  = ""
 
 
+INSTRUMENT_CONFIGS = {
+    "BTCUSDT": {
+        "name": "Bitcoin",
+        "symbol": "BTCUSDT",
+        "min_qty": 0.001,
+        "step_size": 0.001,
+        "min_notional": 115.0,
+        "default_lots": 0.001,
+        "min_capital": 50.0,
+        "base_asset": "BTC",
+    },
+    "ETHUSDT": {
+        "name": "Ethereum",
+        "symbol": "ETHUSDT",
+        "min_qty": 0.001,
+        "step_size": 0.001,
+        "min_notional": 23.0,
+        "default_lots": 0.010,
+        "min_capital": 25.0,
+        "base_asset": "ETH",
+    },
+    "SOLUSDT": {
+        "name": "Solana",
+        "symbol": "SOLUSDT",
+        "min_qty": 0.01,
+        "step_size": 0.01,
+        "min_notional": 5.75,
+        "default_lots": 0.05,
+        "min_capital": 10.0,
+        "base_asset": "SOL",
+    },
+}
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 #  EXECUTOR
 # ══════════════════════════════════════════════════════════════════════════════
 
 class Executor:
     def __init__(self):
+        self.symbol   = os.getenv("TRADING_PAIR", "BTCUSDT").upper()
         self.client   = SharkClient()
         self.rm       = RiskManager()
         self.tg       = TelegramAlerter(paper=(MODE == "PAPER"))
@@ -100,10 +135,36 @@ class Executor:
             "regime": "UNCLEAR",
         }
 
+        # Apply instrument defaults
+        self._apply_instrument_config(self.symbol)
+
         log.info("Executor starting | MODE=%s | SYMBOL=%s | INTERVAL=%s",
-                 MODE, SYMBOL, INTERVAL)
-        self._log_event(f"Executor initialized in {MODE} mode for {SYMBOL} ({INTERVAL})")
-        self.tg.bot_started(MODE, SYMBOL)
+                 MODE, self.symbol, INTERVAL)
+        self._log_event(f"Executor initialized in {MODE} mode for {self.symbol} ({INTERVAL})")
+        self.tg.bot_started(MODE, self.symbol)
+
+    def _apply_instrument_config(self, sym: str):
+        if sym in INSTRUMENT_CONFIGS:
+            cfg = INSTRUMENT_CONFIGS[sym]
+            self.rm.cfg.min_qty = cfg["min_qty"]
+            self.rm.cfg.step_size = cfg["step_size"]
+            self.rm.cfg.manual_lot_size = cfg["default_lots"]
+
+    def set_symbol(self, sym: str):
+        sym = sym.upper()
+        if sym in INSTRUMENT_CONFIGS:
+            if self.position is not None:
+                log.warning("Cannot change symbol while a position is open!")
+                return False
+            self.symbol = sym
+            self._apply_instrument_config(sym)
+            cfg = INSTRUMENT_CONFIGS[sym]
+            self._log_event(
+                f"Switched active pair to {sym} ({cfg['name']}) | "
+                f"Min Lot: {cfg['min_qty']} {cfg['base_asset']} | Min Capital: ${cfg['min_capital']}"
+            )
+            return True
+        return False
 
     def _log_event(self, msg: str):
         ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
@@ -114,8 +175,8 @@ class Executor:
     # ── Data fetching ─────────────────────────────────────────────────────────
 
     def fetch_klines(self) -> pd.DataFrame:
-        """Fetch klines from Node data bridge."""
-        url  = f"{NODE_URL}/api/klines/{INTERVAL}?limit={KLINES_LIMIT}"
+        """Fetch klines from Node data bridge for active symbol."""
+        url  = f"{NODE_URL}/api/klines/{INTERVAL}?pair={self.symbol}&limit={KLINES_LIMIT}"
         resp = requests.get(url, timeout=15)
         resp.raise_for_status()
         body = resp.json()
@@ -293,7 +354,7 @@ class Executor:
 
             # ── Spread filter ─────────────────────────────────────────────────
             try:
-                book     = self.client.get_orderbook(SYMBOL, depth=5)
+                book     = self.client.get_orderbook(self.symbol, depth=5)
                 bids     = book.get("b", book.get("bids", []))
                 asks     = book.get("a", book.get("asks", []))
                 if bids and asks:
@@ -318,7 +379,7 @@ class Executor:
                 return
 
             result = self.client.place_order(
-                SYMBOL, sig.signal, "MARKET", qty
+                self.symbol, sig.signal, "MARKET", qty
             )
 
             # Record position
@@ -329,22 +390,22 @@ class Executor:
                 trail_sl=sig.trail_sl,
             )
             self.position = OpenPosition(
-                side=sig.signal, symbol=SYMBOL, qty=qty,
+                side=sig.signal, symbol=self.symbol, qty=qty,
                 entry=sig.entry, sl=sig.sl, trail_state=trail_state,
                 order_id=result.get("orderId", ""),
                 open_time=datetime.now(timezone.utc).strftime("%H:%M:%S"),
             )
 
             self.rm.position_opened()
-            self._log_event(f"Opened {sig.signal} {qty} @ ${sig.entry:.2f} (SL: ${sig.sl:.2f})")
+            self._log_event(f"Opened {sig.signal} {qty} {self.symbol} @ ${sig.entry:.2f} (SL: ${sig.sl:.2f})")
 
             self.tg.trade_opened(
-                side=sig.signal, symbol=SYMBOL, qty=qty,
+                side=sig.signal, symbol=self.symbol, qty=qty,
                 entry=sig.entry, sl=sig.sl, trail_sl=sig.trail_sl,
                 atr=sig.atr, adx=sig.adx, reason=sig.reason,
             )
-            log.info("Position opened: %s %.6f @ %.2f | SL %.2f",
-                     sig.signal, qty, sig.entry, sig.sl)
+            log.info("Position opened: %s %.6f %s @ %.2f | SL %.2f",
+                     sig.signal, qty, self.symbol, sig.entry, sig.sl)
 
         except KeyboardInterrupt:
             raise
@@ -400,11 +461,12 @@ class Executor:
         profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else (round(gross_profit, 2) if gross_profit > 0 else 1.0)
 
         return {
-            "mode":       MODE,
-            "symbol":     SYMBOL,
-            "interval":   INTERVAL,
-            "running":    self._running,
-            "strategy":   "Donchian Channel Breakout (25, 14)",
+            "mode":        MODE,
+            "symbol":      self.symbol,
+            "interval":    INTERVAL,
+            "instruments": INSTRUMENT_CONFIGS,
+            "running":     self._running,
+            "strategy":    "Donchian Channel Breakout (25, 14)",
             "market":     self.latest_market,
             "position":   {
                 "side":           self.position.side,

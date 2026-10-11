@@ -119,6 +119,28 @@ export default function App() {
     }
   };
 
+  const [selectedSymbol, setSelectedSymbol] = useState('BTCUSDT');
+  const activeSymbol = status?.symbol || selectedSymbol;
+
+  const handleSymbolChange = async (newSymbol) => {
+    try {
+      const res = await fetch('/api/control/symbol', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ symbol: newSymbol }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.detail || 'Failed to switch trading pair');
+      } else {
+        setSelectedSymbol(newSymbol);
+        fetchStatus();
+      }
+    } catch (e) {
+      alert('Error switching trading pair: ' + e.message);
+    }
+  };
+
   const handleModeChange = async (newMode) => {
     try {
       const res = await fetch('/api/control/mode', {
@@ -143,6 +165,8 @@ export default function App() {
       <Navbar
         status={status}
         connected={connected}
+        currentSymbol={activeSymbol}
+        onSymbolChange={handleSymbolChange}
         onPause={handlePause}
         onResume={handleResume}
         onFlatten={handleFlatten}
@@ -164,6 +188,7 @@ export default function App() {
             <ChartWidget
               position={status?.position}
               market={status?.market}
+              symbol={activeSymbol}
             />
           </div>
 
@@ -178,6 +203,8 @@ export default function App() {
             <div className="flex-1 min-h-[260px]">
               <ControlPanel
                 status={status}
+                currentSymbol={activeSymbol}
+                onSymbolChange={handleSymbolChange}
                 onModeChange={handleModeChange}
                 onPause={handlePause}
                 onResume={handleResume}

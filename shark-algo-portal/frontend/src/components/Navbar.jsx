@@ -1,10 +1,18 @@
 import React from 'react';
 import { Activity, ShieldAlert, Play, Pause, Zap, Wifi, WifiOff } from 'lucide-react';
 
-export default function Navbar({ status, connected, onPause, onResume, onFlatten }) {
+export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', onSymbolChange, onPause, onResume, onFlatten }) {
   const isRunning = status?.running && !status?.paused;
   const isHalted = status?.risk?.halted;
   const isLive = status?.mode === 'LIVE';
+  const hasPosition = Boolean(status?.position);
+  const activeSymbol = status?.symbol || currentSymbol || 'BTCUSDT';
+
+  const pairs = [
+    { symbol: 'BTCUSDT', label: 'BTC/USDT', minCap: '$50+' },
+    { symbol: 'ETHUSDT', label: 'ETH/USDT', minCap: '$25+' },
+    { symbol: 'SOLUSDT', label: 'SOL/USDT', minCap: '$10+' },
+  ];
 
   return (
     <header className="bg-[#0e131f] border-b border-[#1b2336] px-4 py-3 sticky top-0 z-50">
@@ -20,21 +28,53 @@ export default function Navbar({ status, connected, onPause, onResume, onFlatten
                   TERMINAL
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 font-mono">BTCUSDT • Shark Exchange Futures</p>
+              <p className="text-[11px] text-slate-400 font-mono">{activeSymbol} • Shark Exchange Futures</p>
             </div>
           </div>
 
-          <div className="hidden sm:flex items-center pl-4 border-l border-[#1b2336] space-x-3 text-xs">
+          {/* Instrument Switcher Tabs */}
+          <div className="hidden sm:flex items-center pl-4 border-l border-[#1b2336] space-x-1.5 bg-[#090d16] p-1 rounded-lg border border-[#182338]">
+            {pairs.map((p) => {
+              const isActive = activeSymbol === p.symbol;
+              return (
+                <button
+                  key={p.symbol}
+                  onClick={() => {
+                    if (hasPosition && !isActive) {
+                      alert(`Cannot switch instrument while an active position is open in ${activeSymbol}! Close position first.`);
+                      return;
+                    }
+                    if (onSymbolChange && !isActive) {
+                      onSymbolChange(p.symbol);
+                    }
+                  }}
+                  className={`px-2.5 py-1 rounded text-xs font-mono font-bold transition flex items-center space-x-1 cursor-pointer ${
+                    isActive
+                      ? 'bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/50 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 border border-transparent hover:bg-[#151f33]'
+                  }`}
+                  title={`${p.label} - Min Capital ${p.minCap}`}
+                >
+                  <span>{p.label}</span>
+                  <span className={`text-[9px] px-1 py-0.2 rounded font-normal ${isActive ? 'bg-[#00e5ff]/30 text-white' : 'text-slate-500'}`}>
+                    {p.minCap}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="hidden lg:flex items-center pl-3 space-x-3 text-xs">
             <div className="flex items-center space-x-1.5">
               {connected ? (
                 <>
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                  <span className="text-slate-300 font-mono">WS ONLINE</span>
+                  <span className="text-slate-300 font-mono text-[11px]">WS ONLINE</span>
                 </>
               ) : (
                 <>
                   <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-                  <span className="text-rose-400 font-mono">RECONNECTING</span>
+                  <span className="text-rose-400 font-mono text-[11px]">RECONNECTING</span>
                 </>
               )}
             </div>

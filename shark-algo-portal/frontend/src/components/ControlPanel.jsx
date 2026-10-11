@@ -1,16 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import { Sliders, Calculator, Zap, Shield, ChevronRight, Plus, Minus, ArrowUpRight } from 'lucide-react';
 
-export default function ControlPanel({ status, onModeChange, onPause, onResume, onFlatten }) {
+export default function ControlPanel({ status, currentSymbol = 'BTCUSDT', onSymbolChange, onModeChange, onPause, onResume, onFlatten }) {
   const isRunning = status?.running && !status?.paused;
   const currentMode = status?.mode || 'PAPER';
-  const markPrice = status?.market?.mark_price || 83000;
-  const atr = status?.market?.atr || 40;
+  const hasPosition = Boolean(status?.position);
+
+  const defaultInstruments = {
+    BTCUSDT: { name: 'Bitcoin', symbol: 'BTCUSDT', min_qty: 0.001, step_size: 0.001, min_notional: 115.0, min_capital: 50.0, base_asset: 'BTC', default_lots: 0.001 },
+    ETHUSDT: { name: 'Ethereum', symbol: 'ETHUSDT', min_qty: 0.001, step_size: 0.001, min_notional: 23.0, min_capital: 25.0, base_asset: 'ETH', default_lots: 0.010 },
+    SOLUSDT: { name: 'Solana', symbol: 'SOLUSDT', min_qty: 0.01, step_size: 0.01, min_notional: 5.75, min_capital: 10.0, base_asset: 'SOL', default_lots: 0.05 },
+  };
+
+  const instruments = status?.instruments || defaultInstruments;
+  const activeSymbol = status?.symbol || currentSymbol || 'BTCUSDT';
+  const currentInst = instruments[activeSymbol] || defaultInstruments.BTCUSDT;
+  const baseAsset = currentInst.base_asset || 'BTC';
+  const minQty = currentInst.min_qty || 0.001;
+  const stepSize = currentInst.step_size || 0.001;
+  const decimals = stepSize < 0.01 ? 3 : 2;
+
+  const markPrice = status?.market?.mark_price || (activeSymbol === 'BTCUSDT' ? 83000 : activeSymbol === 'ETHUSDT' ? 2400 : 150);
+  const atr = status?.market?.atr || (activeSymbol === 'BTCUSDT' ? 40 : activeSymbol === 'ETHUSDT' ? 5 : 0.8);
 
   // Sizing & Compounding State
   const [strategy, setStrategy] = useState('DONCHIAN');
   const [sizingMode, setSizingMode] = useState(status?.sizing?.sizing_mode || 'AUTO');
-  const [manualLots, setManualLots] = useState(status?.sizing?.manual_lot_size || 0.001);
+  const [manualLots, setManualLots] = useState(status?.sizing?.manual_lot_size || currentInst.default_lots || 0.001);
   const [capitalBase, setCapitalBase] = useState(status?.sizing?.capital_base || 100.0);
   const [riskPct, setRiskPct] = useState(status?.sizing?.risk_per_trade_pct || 1.0);
   const [leverage, setLeverage] = useState(status?.sizing?.leverage || 10);
@@ -50,7 +66,7 @@ export default function ControlPanel({ status, onModeChange, onPause, onResume, 
   // Calculations for display
   const effectiveLots = sizingMode === 'MANUAL' 
     ? manualLots 
-    : Math.max(0.001, Number(((capitalBase * (riskPct / 100)) / (1.5 * atr)).toFixed(3)));
+    : Math.max(minQty, Number(((capitalBase * (riskPct / 100)) / (Math.max(0.1, 1.5 * atr))).toFixed(decimals)));
 
   const notionalValue = effectiveLots * markPrice;
   const marginRequired = notionalValue / leverage;
@@ -69,10 +85,17 @@ export default function ControlPanel({ status, onModeChange, onPause, onResume, 
   };
 
   const adjustLotSize = (delta) => {
-    const newLot = Math.max(0.001, Number((manualLots + delta).toFixed(3)));
+    const newLot = Math.max(minQty, Number((manualLots + delta).toFixed(decimals)));
     setManualLots(newLot);
     pushSizingUpdate({ manual_lot_size: newLot });
   };
+
+  const presetsBySymbol = {
+    BTCUSDT: [0.001, 0.002, 0.005, 0.010],
+    ETHUSDT: [0.005, 0.010, 0.020, 0.050],
+    SOLUSDT: [0.05, 0.10, 0.20, 0.50],
+  };
+  const currentPresets = presetsBySymbol[activeSymbol] || [0.001, 0.002, 0.005, 0.010];
 
   return (
     <div className="bg-[#0e131f] border border-[#1b2336] rounded-xl p-5 shadow-xl h-full flex flex-col justify-between">
@@ -110,6 +133,59 @@ export default function ControlPanel({ status, onModeChange, onPause, onResume, 
             <span>{currentMode}</span>
           </button>
         </div>
+
+        {/* Quick Pair Selector */}
+        <div className="bg-[#090d16] p-2.5 rounded-xl border border-[#1b253b] mb-3 flex items-center justify-between">
+          <div className="flex items-center space-x-1.5">
+            <span className="text-[11px] font-bold text-slate-300">Trading Pair:</span>
+            <span className="text-xs font-mono font-bold text-[#00e5ff]">{activeSymbol}</span>
+          </div>
+          <div className="flex space-x-1">
+            {[
+              { sym: 'BTCUSDT', label: 'BTC', min: '$50+' },
+              { sym: 'ETHUSDT', label: 'ETH', min: '$25+' },
+              { sym: 'SOLUSDT', label: 'SOL', min: '$10+' },
+            ].map((p) => {
+              const isSel = activeSymbol === p.sym;
+              return (
+                <button
+                  key={p.sym}
+                  onClick={() => {
+                    if (hasPosition && !isSel) {
+                      alert(`Cannot switch instrument while an active position is open in ${activeSymbol}! Close position first.`);
+                      return;
+                    }
+                    if (onSymbolChange && !isSel) {
+                      onSymbolChange(p.sym);
+                    }
+                  }}
+                  className={`px-2 py-0.5 rounded text-xs font-mono font-bold transition flex items-center space-x-1 cursor-pointer ${
+                    isSel
+                      ? 'bg-[#00e5ff]/20 text-[#00e5ff] border border-[#00e5ff]/50 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200 border border-[#182338] hover:bg-[#141d2f]'
+                  }`}
+                  title={`${p.sym} - Recommended capital ${p.min}`}
+                >
+                  <span>{p.label}</span>
+                  <span className="text-[9px] text-slate-500 font-normal">({p.min})</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Low Capital Advisory Banner */}
+        {capitalBase < currentInst.min_capital && (
+          <div className="p-2.5 mb-3 bg-amber-500/15 border border-amber-500/30 rounded-lg text-[11px] font-mono text-amber-300">
+            ⚠️ <strong>Low Capital Alert:</strong> Min recommended capital for {activeSymbol} is ${currentInst.min_capital} (Min notional: ${currentInst.min_notional}). 
+            {activeSymbol !== 'SOLUSDT' && ' Switch to SOL/USDT to trade with $10+ safely!'}
+          </div>
+        )}
+        {activeSymbol === 'SOLUSDT' && capitalBase <= 25 && (
+          <div className="p-2.5 mb-3 bg-emerald-500/15 border border-emerald-500/30 rounded-lg text-[11px] font-mono text-emerald-300">
+            ✨ <strong>$10 Capital Ready:</strong> SOL/USDT min order is ${currentInst.min_notional} (0.01 SOL). At {leverage}x leverage, requires only ~${(currentInst.min_notional / leverage).toFixed(2)} margin!
+          </div>
+        )}
 
         {/* Capital Compounding & Sizing Station */}
         <div className="bg-[#121826] border border-[#1e273d] rounded-xl p-3.5 mb-4">
@@ -155,12 +231,12 @@ export default function ControlPanel({ status, onModeChange, onPause, onResume, 
                 <span className="text-slate-400">$</span>
                 <input
                   type="number"
-                  step="10"
-                  min="50"
+                  step="5"
+                  min="5"
                   max="100000"
                   value={capitalBase}
                   onChange={(e) => {
-                    const val = parseFloat(e.target.value) || 100;
+                    const val = parseFloat(e.target.value) || 10;
                     setCapitalBase(val);
                     pushSizingUpdate({ capital_base: val });
                   }}
@@ -172,20 +248,20 @@ export default function ControlPanel({ status, onModeChange, onPause, onResume, 
             {/* Lot Size Control / Override */}
             <div className="bg-[#090d16] p-2 rounded-lg border border-[#182236]">
               <div className="flex items-center justify-between mb-1">
-                <span className="text-slate-400 text-[10px]">Lot Size (BTC)</span>
+                <span className="text-slate-400 text-[10px]">Lot Size ({baseAsset})</span>
                 {sizingMode === 'MANUAL' && (
                   <div className="flex items-center space-x-1">
                     <button
-                      onClick={() => adjustLotSize(-0.001)}
-                      className="p-0.5 bg-[#172136] hover:bg-[#22314e] text-slate-300 rounded"
-                      title="Decrease 0.001"
+                      onClick={() => adjustLotSize(-stepSize)}
+                      className="p-0.5 bg-[#172136] hover:bg-[#22314e] text-slate-300 rounded cursor-pointer"
+                      title={`Decrease ${stepSize}`}
                     >
                       <Minus className="w-2.5 h-2.5" />
                     </button>
                     <button
-                      onClick={() => adjustLotSize(0.001)}
-                      className="p-0.5 bg-[#172136] hover:bg-[#22314e] text-slate-300 rounded"
-                      title="Increase 0.001"
+                      onClick={() => adjustLotSize(stepSize)}
+                      className="p-0.5 bg-[#172136] hover:bg-[#22314e] text-slate-300 rounded cursor-pointer"
+                      title={`Increase ${stepSize}`}
                     >
                       <Plus className="w-2.5 h-2.5" />
                     </button>
@@ -195,13 +271,13 @@ export default function ControlPanel({ status, onModeChange, onPause, onResume, 
               <div className="flex items-center space-x-1">
                 <input
                   type="number"
-                  step="0.001"
-                  min="0.001"
-                  max="10.0"
+                  step={stepSize}
+                  min={minQty}
+                  max="100.0"
                   disabled={sizingMode === 'AUTO'}
                   value={effectiveLots}
                   onChange={(e) => {
-                    const val = parseFloat(e.target.value) || 0.001;
+                    const val = parseFloat(e.target.value) || minQty;
                     setManualLots(val);
                     pushSizingUpdate({ manual_lot_size: val });
                   }}
@@ -209,7 +285,7 @@ export default function ControlPanel({ status, onModeChange, onPause, onResume, 
                     sizingMode === 'AUTO' ? 'text-[#00e5ff]' : 'text-amber-400'
                   }`}
                 />
-                <span className="text-[10px] text-slate-400">BTC</span>
+                <span className="text-[10px] text-slate-400">{baseAsset}</span>
               </div>
             </div>
           </div>
@@ -217,20 +293,20 @@ export default function ControlPanel({ status, onModeChange, onPause, onResume, 
           {/* Quick Preset Buttons for Manual Lot Scaling */}
           {sizingMode === 'MANUAL' && (
             <div className="flex items-center space-x-1.5 mb-3">
-              {[0.001, 0.002, 0.005, 0.010].map((preset) => (
+              {currentPresets.map((preset) => (
                 <button
                   key={preset}
                   onClick={() => {
                     setManualLots(preset);
                     pushSizingUpdate({ manual_lot_size: preset });
                   }}
-                  className={`flex-1 py-1 rounded text-[10px] font-mono font-bold transition border ${
+                  className={`flex-1 py-1 rounded text-[10px] font-mono font-bold transition border cursor-pointer ${
                     manualLots === preset
                       ? 'bg-[#00e5ff]/20 text-[#00e5ff] border-[#00e5ff]/40'
                       : 'bg-[#090d16] text-slate-400 border-[#182236] hover:text-white'
                   }`}
                 >
-                  {preset}
+                  {preset} {baseAsset}
                 </button>
               ))}
             </div>

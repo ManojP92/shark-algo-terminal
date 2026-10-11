@@ -88,11 +88,12 @@ def get_status():
 
 
 @app.get("/api/candles/{timeframe}")
-def get_candles(timeframe: str, limit: int = 200):
+def get_candles(timeframe: str, limit: int = 200, symbol: Optional[str] = None):
     """Proxy kline data from Node bridge to the React dashboard."""
     try:
+        active_sym = symbol or (_executor.symbol if _executor else "BTCUSDT")
         resp = requests.get(
-            f"{NODE_URL}/api/klines/{timeframe}?limit={limit}", timeout=10
+            f"{NODE_URL}/api/klines/{timeframe}?pair={active_sym}&limit={limit}", timeout=10
         )
         resp.raise_for_status()
         return resp.json()
@@ -148,7 +149,7 @@ def resume_bot():
 @app.post("/api/control/flatten")
 def emergency_flatten():
     global _executor
-    symbol = os.getenv("TRADING_PAIR", "BTCUSDT")
+    symbol = _executor.symbol if _executor else os.getenv("TRADING_PAIR", "BTCUSDT")
     client = SharkClient()
     result = client.emergency_flatten(symbol)
 
@@ -159,8 +160,36 @@ def emergency_flatten():
     tg = TelegramAlerter()
     tg.emergency_flatten(symbol, "Dashboard emergency button pressed")
 
-    log.critical("EMERGENCY FLATTEN triggered via dashboard")
+    log.critical("EMERGENCY FLATTEN triggered via dashboard for %s", symbol)
     return {"ok": True, "result": result}
+
+
+class SymbolRequest(BaseModel):
+    symbol: str
+
+
+@app.post("/api/control/symbol")
+def switch_symbol(req: SymbolRequest):
+    """
+    Switch active trading pair (e.g. BTCUSDT, ETHUSDT, SOLUSDT).
+    """
+    global _executor
+    if _executor is None:
+        raise HTTPException(status_code=503, detail="Executor not running")
+    success = _executor.set_symbol(req.symbol)
+    if not success:
+        if _executor.position is not None:
+            raise HTTPException(status_code=400, detail="Cannot switch symbol while a position is open")
+        raise HTTPException(status_code=400, detail=f"Unsupported symbol: {req.symbol}")
+    return {
+        "ok": True,
+        "symbol": _executor.symbol,
+        "sizing": {
+            "min_qty": _executor.rm.cfg.min_qty,
+            "step_size": _executor.rm.cfg.step_size,
+            "manual_lot_size": _executor.rm.cfg.manual_lot_size,
+        }
+    }
 
 
 @app.post("/api/control/mode")

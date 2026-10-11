@@ -220,9 +220,9 @@ class RiskManager:
         # 1. Manual Lot Override Mode
         if self.cfg.sizing_mode == "MANUAL" or manual_lots is not None:
             lots = manual_lots if manual_lots is not None else self.cfg.manual_lot_size
-            quantized = round(round(lots / self.cfg.step_size) * self.cfg.step_size, 3)
+            quantized = round(round(lots / self.cfg.step_size) * self.cfg.step_size, 4)
             final_size = max(self.cfg.min_qty, quantized)
-            log.info("MANUAL sizing applied: %.3f BTC (min_qty=%.3f)", final_size, self.cfg.min_qty)
+            log.info("MANUAL sizing applied: %.4f (min_qty=%.4f)", final_size, self.cfg.min_qty)
             return final_size
 
         # 2. Dynamic Capital Compounding Mode
@@ -232,18 +232,18 @@ class RiskManager:
         if sl_distance <= 0:
             return self.cfg.min_qty
 
-        # Raw calculated BTC quantity
+        # Raw calculated quantity
         raw_size = risk_amount / sl_distance
         
-        # Quantize to 0.001 step size
+        # Quantize to step size
         steps = round(raw_size / self.cfg.step_size)
-        quantized_size = round(steps * self.cfg.step_size, 3)
+        quantized_size = round(steps * self.cfg.step_size, 4)
 
-        # Enforce exchange minimum lot size (0.001 BTC on Shark Exchange)
+        # Enforce exchange minimum lot size
         final_size = max(self.cfg.min_qty, quantized_size)
 
         log.info(
-            "AUTO compounding sizing: equity=$%.2f risk=%.2f%% ($%.2f) sl_dist=$%.2f -> raw=%.4f, final=%.3f BTC",
+            "AUTO compounding sizing: equity=$%.2f risk=%.2f%% ($%.2f) sl_dist=$%.2f -> raw=%.4f, final=%.4f",
             effective_equity, self.cfg.risk_per_trade_pct, risk_amount, sl_distance, raw_size, final_size
         )
         return final_size
