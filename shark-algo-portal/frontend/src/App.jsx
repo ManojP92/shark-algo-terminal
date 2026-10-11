@@ -236,6 +236,7 @@ export default function App() {
         connected={connected}
         currentSymbol={activeSymbol}
         onSymbolChange={handleSymbolChange}
+        onModeChange={handleModeChange}
         onOpenBacktest={() => setIsBacktestOpen(true)}
         onPause={handlePause}
         onResume={handleResume}

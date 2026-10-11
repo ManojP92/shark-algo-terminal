@@ -137,13 +137,30 @@ class Executor:
             "regime": "UNCLEAR",
         }
 
+        self.mode = MODE
+        self.client.live = (self.mode == "LIVE")
+        self.client.dry_run = (self.mode != "LIVE")
+
         # Apply instrument defaults
         self._apply_instrument_config(self.symbol)
 
         log.info("Executor starting | MODE=%s | SYMBOL=%s | INTERVAL=%s | STRATEGY=%s",
-                 MODE, self.symbol, INTERVAL, self.strategy_name)
-        self._log_event(f"Executor initialized in {MODE} mode for {self.symbol} ({INTERVAL}) with {self.strategy_name}")
-        self.tg.bot_started(MODE, self.symbol)
+                 self.mode, self.symbol, INTERVAL, self.strategy_name)
+        self._log_event(f"Executor initialized in {self.mode} mode for {self.symbol} ({INTERVAL}) with {self.strategy_name}")
+        self.tg.bot_started(self.mode, self.symbol)
+
+    def set_mode(self, mode: str) -> None:
+        """Dynamically toggle between PAPER and LIVE modes."""
+        mode_upper = mode.strip().upper()
+        if mode_upper in ("LIVE", "PAPER"):
+            self.mode = mode_upper
+            is_live = (mode_upper == "LIVE")
+            self.client.live = is_live
+            self.client.dry_run = not is_live
+            self.tg.paper = not is_live
+            self._log_event(f"Trading mode switched to {mode_upper}")
+            log.info("Executor switched mode to %s | client.live=%s | client.dry_run=%s",
+                     mode_upper, self.client.live, self.client.dry_run)
 
     def set_strategy(self, strat_name: str):
         from strategy import get_strategy
@@ -474,7 +491,7 @@ class Executor:
         profit_factor = round(gross_profit / gross_loss, 2) if gross_loss > 0 else (round(gross_profit, 2) if gross_profit > 0 else 1.0)
 
         return {
-            "mode":        MODE,
+            "mode":        self.mode,
             "symbol":      self.symbol,
             "interval":    INTERVAL,
             "instruments": INSTRUMENT_CONFIGS,
@@ -486,7 +503,7 @@ class Executor:
             "wallet": {
                 "balance":      round(self.get_equity(), 2),
                 "currency":     "USDT",
-                "mode":         MODE,
+                "mode":         self.mode,
                 "capital_base": self.rm.cfg.capital_base,
             },
             "position":   {

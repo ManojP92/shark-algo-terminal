@@ -315,20 +315,18 @@ def switch_symbol(req: SymbolRequest):
 @app.post("/api/control/mode")
 def set_mode(req: ModeRequest):
     """
-    Switch between PAPER and LIVE modes.
-    Note: switching to LIVE requires LIVE=true in environment — this endpoint
-    validates the env flag before allowing the switch.
+    Switch dynamically between PAPER and LIVE modes on the fly.
     """
-    requested = req.mode.upper()
-    if requested == "LIVE":
-        live_flag = os.getenv("LIVE", "false").lower()
-        dry_run   = os.getenv("DRY_RUN", "true").lower()
-        if live_flag != "true" or dry_run == "true":
-            raise HTTPException(
-                status_code=403,
-                detail="Cannot switch to LIVE: set LIVE=true and DRY_RUN=false in .env first"
-            )
-    return {"ok": True, "mode": requested, "message": f"Mode set to {requested}"}
+    global _executor
+    requested = req.mode.strip().upper()
+    if requested not in ("PAPER", "LIVE"):
+        raise HTTPException(status_code=400, detail="Invalid mode: must be PAPER or LIVE")
+
+    if _executor is not None:
+        _executor.set_mode(requested)
+        log.info("Mode dynamically switched to %s via dashboard", requested)
+
+    return {"ok": True, "mode": requested, "message": f"Mode successfully switched to {requested}"}
 
 
 class SizingRequest(BaseModel):

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Activity, ShieldAlert, Play, Pause, Zap, Wifi, WifiOff, Sparkles, Wallet, Lock } from 'lucide-react';
 
-export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', onSymbolChange, onOpenBacktest, onPause, onResume, onFlatten, onLogout }) {
+export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', onSymbolChange, onModeChange, onOpenBacktest, onPause, onResume, onFlatten, onLogout }) {
   const isRunning = status?.running && !status?.paused;
   const isHalted = status?.risk?.halted;
   const isLive = status?.mode === 'LIVE';
@@ -113,15 +113,28 @@ export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', o
             <span className="text-[10px] text-slate-500 font-normal">USDT</span>
           </div>
 
-          {/* Mode Pill */}
-          <div className={`px-2.5 py-1 rounded text-xs font-mono font-bold tracking-wide flex items-center space-x-1.5 ${
-            isLive 
-              ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40 shadow-lg shadow-rose-950/40' 
-              : 'bg-[#ffd600]/15 text-[#ffd600] border border-[#ffd600]/30'
-          }`}>
+          {/* Mode Pill Toggle Button */}
+          <button
+            onClick={() => {
+              const target = isLive ? 'PAPER' : 'LIVE';
+              if (!isLive) {
+                if (window.confirm("⚠️ SWITCH TO LIVE TRADING: Are you sure? Real funds on Shark Exchange will be traded.")) {
+                  onModeChange && onModeChange('LIVE');
+                }
+              } else {
+                onModeChange && onModeChange('PAPER');
+              }
+            }}
+            title={`Click to switch to ${isLive ? 'PAPER' : 'LIVE'} mode`}
+            className={`px-2.5 py-1 rounded text-xs font-mono font-bold tracking-wide flex items-center space-x-1.5 transition cursor-pointer ${
+              isLive 
+                ? 'bg-rose-500/20 text-rose-400 border border-rose-500/40 hover:bg-rose-500/30 shadow-lg shadow-rose-950/40' 
+                : 'bg-[#ffd600]/15 text-[#ffd600] border border-[#ffd600]/30 hover:bg-[#ffd600]/25'
+            }`}
+          >
             <span className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-rose-400 animate-ping' : 'bg-[#ffd600]'}`}></span>
             <span>{isLive ? 'LIVE' : 'PAPER'}</span>
-          </div>
+          </button>
 
           {/* Backtest & Monte Carlo Button */}
           <button
