@@ -355,6 +355,7 @@ def update_sizing(req: SizingRequest):
         rm.cfg.risk_per_trade_pct = round(req.risk_per_trade_pct, 2)
     if req.capital_base is not None and req.capital_base > 0:
         rm.cfg.capital_base = round(req.capital_base, 2)
+        _executor.paper_wallet = round(req.capital_base, 2)
     if req.leverage is not None and req.leverage > 0:
         rm.cfg.leverage = req.leverage
 

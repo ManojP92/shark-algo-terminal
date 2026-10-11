@@ -140,6 +140,7 @@ class Executor:
         self.mode = MODE
         self.client.live = (self.mode == "LIVE")
         self.client.dry_run = (self.mode != "LIVE")
+        self.paper_wallet = float(self.rm.cfg.capital_base)
 
         # Apply instrument defaults
         self._apply_instrument_config(self.symbol)
@@ -222,9 +223,9 @@ class Executor:
         return df
 
     def get_equity(self) -> float:
-        """Fetch current USDT equity from exchange. Falls back to capital_base in PAPER or on API failure."""
-        if MODE == "PAPER":
-            return float(self.rm.cfg.capital_base + self._stats.get("daily_pnl", 0.0))
+        """Fetch current USDT equity from exchange. Uses compounding paper_wallet in PAPER mode."""
+        if self.mode == "PAPER":
+            return round(self.paper_wallet, 2)
         try:
             bal = self.client.get_balances()
             # Wallet response varies; try common keys
@@ -233,6 +234,11 @@ class Executor:
                     if b.get("asset", "").upper() in ("USDT", "USD"):
                         return float(b.get("balance", b.get("availableBalance", self.rm.cfg.capital_base)))
             if isinstance(bal, dict):
+                data = bal.get("data", bal)
+                if isinstance(data, dict):
+                    for k in ("balance", "availableBalance", "totalWalletBalance", "equity"):
+                        if k in data:
+                            return float(data[k])
                 return float(bal.get("balance", bal.get("availableBalance", self.rm.cfg.capital_base)))
         except Exception as err:
             log.warning("get_equity failed (%s) — using fallback %s", err, self.rm.cfg.capital_base)
@@ -284,6 +290,8 @@ class Executor:
         # Update risk state
         self.rm.record_trade(pnl)
         self.rm.position_closed()
+        if self.mode == "PAPER":
+            self.paper_wallet = max(1.0, round(self.paper_wallet + pnl, 2))
         self._stats["trades"] += 1
         if pnl > 0:
             self._stats["wins"] += 1
