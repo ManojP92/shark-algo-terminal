@@ -45,6 +45,7 @@ from risk_manager import RiskManager
 from telegram_alerts import TelegramAlerter
 from executor import Executor, INSTRUMENT_CONFIGS
 from backtester import run_backtest, run_monte_carlo
+from telegram_commander import TelegramCommander
 
 log = logging.getLogger("api_server")
 logging.basicConfig(
@@ -515,14 +516,21 @@ async def websocket_endpoint(ws: WebSocket):
 #  STARTUP — launch executor in background thread
 # ══════════════════════════════════════════════════════════════════════════════
 
+_commander: Optional[TelegramCommander] = None
+
+
 @app.on_event("startup")
 def startup():
-    global _executor, _executor_thread
+    global _executor, _executor_thread, _commander
     _executor = Executor()
     _executor.set_mode("PAPER")
     _executor_thread = threading.Thread(target=_executor.run, daemon=True)
     _executor_thread.start()
     log.info("Executor thread started (FAIL-SAFE: Always initialized in PAPER mode)")
+
+    # Start 2-way interactive Telegram remote control listener
+    _commander = TelegramCommander(get_executor=lambda: _executor)
+    _commander.start()
 
 
 if __name__ == "__main__":

@@ -174,6 +174,16 @@ class Executor:
         self._log_event(f"Strategy changed to {self.strategy_name}")
         return True
 
+    def set_symbol(self, sym: str):
+        sym_upper = sym.upper()
+        if sym_upper in INSTRUMENT_CONFIGS:
+            self.symbol = sym_upper
+            self._apply_instrument_config(sym_upper)
+            log.info("Active symbol switched to %s", sym_upper)
+            self._log_event(f"Instrument changed to {sym_upper}")
+            return True
+        return False
+
     def _apply_instrument_config(self, sym: str):
         if sym in INSTRUMENT_CONFIGS:
             cfg = INSTRUMENT_CONFIGS[sym]
