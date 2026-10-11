@@ -59,12 +59,18 @@ class TelegramAlerter:
         if not self.token or not self.chat_id:
             return False
         mode = "📋 <b>[PAPER]</b> " if self.paper else "🔴 <b>[LIVE]</b> "
+        return self.send_raw(mode + html)
+
+    def send_raw(self, html: str) -> bool:
+        """Send a raw HTML-formatted message without paper/live prefix."""
+        if not self.token or not self.chat_id:
+            return False
         try:
             resp = requests.post(
                 self._url,
                 json={
                     "chat_id":                  self.chat_id,
-                    "text":                     mode + html,
+                    "text":                     html,
                     "parse_mode":               "HTML",
                     "disable_web_page_preview": True,
                 },
@@ -75,6 +81,29 @@ class TelegramAlerter:
         except Exception as err:
             log.error("Telegram send failed: %s", err)
             return False
+
+    def send_2fa_code(self, otp: str, client_ip: str = "Web Terminal") -> bool:
+        msg = (
+            "🦈 <b>SHARK ALGO TERMINAL — 2FA SECURITY</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🔐 <b>One-Time Code:</b>  <code>{otp}</code>\n"
+            "⏳ <b>Valid For:</b>  5 minutes\n"
+            f"🌐 <b>Client:</b>  {client_ip}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "<i>⚠️ If you did not request this verification code, ignore this alert and change your master password.</i>"
+        )
+        return self.send_raw(msg)
+
+    def login_successful(self, client_ip: str = "Web Terminal") -> bool:
+        msg = (
+            "🔓 <b>SHARK ALGO TERMINAL — LOGIN APPROVED</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            "✅ 2-Factor Authentication verified successfully.\n"
+            f"🌐 <b>Active Session:</b> {client_ip}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━"
+        )
+        return self.send_raw(msg)
+
 
     # ── Alert templates ──────────────────────────────────────────────────────
 

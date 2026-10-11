@@ -24,6 +24,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import random
+import secrets
 import threading
 import time
 from typing import Optional
@@ -116,6 +118,122 @@ def get_balance():
 @app.get("/api/health")
 def health():
     return {"ok": True, "timestamp": int(time.time() * 1000)}
+
+
+# ── Authentication & Telegram 2FA ─────────────────────────────────────────────
+
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "shark2026")
+
+_active_otps: dict[str, dict] = {}
+_active_sessions: dict[str, dict] = {}
+
+
+class LoginRequest(BaseModel):
+    password: str
+
+
+class VerifyOtpRequest(BaseModel):
+    otp: str
+
+
+class LogoutRequest(BaseModel):
+    token: Optional[str] = None
+
+
+@app.post("/api/auth/request-otp")
+def request_otp(body: LoginRequest):
+    """Verify master password and dispatch 6-digit OTP via Telegram."""
+    global _active_otps
+    now = time.time()
+    # Prune expired OTPs
+    _active_otps = {k: v for k, v in _active_otps.items() if v["expires_at"] > now}
+
+    if body.password != ADMIN_PASSWORD:
+        log.warning("Authentication failure: Invalid master password submitted")
+        raise HTTPException(status_code=401, detail="Incorrect Master Password")
+
+    # Generate 6-digit code
+    otp = f"{random.randint(100000, 999999)}"
+    _active_otps[otp] = {
+        "created_at": now,
+        "expires_at": now + 300,  # 5 minutes validity
+        "attempts": 0,
+    }
+
+    tg = TelegramAlerter()
+    sent = tg.send_2fa_code(otp=otp, client_ip="Web Terminal")
+    if not sent:
+        log.warning("Failed to send 2FA code via Telegram — verify bot credentials")
+
+    chat_hint = f"...{tg.chat_id[-4:]}" if len(tg.chat_id) >= 4 else "Telegram"
+    log.info("2FA OTP generated and dispatched via Telegram to chat %s", chat_hint)
+
+    return {
+        "ok": True,
+        "message": f"Verification code sent to your Telegram (@{chat_hint})",
+        "chat_id_hint": chat_hint,
+        "expires_in": 300,
+    }
+
+
+@app.post("/api/auth/verify-otp")
+def verify_otp(body: VerifyOtpRequest):
+    """Verify Telegram 2FA code and issue 7-day secure session token."""
+    global _active_otps, _active_sessions
+    now = time.time()
+    otp = body.otp.strip()
+
+    if otp not in _active_otps:
+        log.warning("2FA verification failed: Invalid OTP '%s'", otp)
+        raise HTTPException(status_code=400, detail="Invalid verification code")
+
+    otp_info = _active_otps[otp]
+    if now > otp_info["expires_at"]:
+        del _active_otps[otp]
+        raise HTTPException(status_code=400, detail="Verification code expired. Please request a new code.")
+
+    # Valid! Invalidate OTP to prevent replay attacks
+    del _active_otps[otp]
+
+    # Create session
+    token = secrets.token_hex(32)
+    _active_sessions[token] = {
+        "created_at": now,
+        "expires_at": now + (7 * 86400),
+        "user": "admin",
+    }
+
+    # Dispatch confirmation alert to Telegram
+    TelegramAlerter().login_successful(client_ip="Web Terminal")
+    log.info("2FA verification SUCCESS. New session issued: %s...", token[:8])
+
+    return {
+        "ok": True,
+        "token": token,
+        "user": "admin",
+        "expires_in": 7 * 86400,
+    }
+
+
+@app.get("/api/auth/check")
+def check_auth(token: Optional[str] = None):
+    """Validate active session token."""
+    if not token or token not in _active_sessions:
+        return {"authenticated": False}
+    sess = _active_sessions[token]
+    if time.time() > sess["expires_at"]:
+        del _active_sessions[token]
+        return {"authenticated": False}
+    return {"authenticated": True, "user": sess.get("user", "admin")}
+
+
+@app.post("/api/auth/logout")
+def logout(body: LogoutRequest):
+    """Invalidate session token."""
+    if body.token and body.token in _active_sessions:
+        del _active_sessions[body.token]
+        log.info("Session revoked: %s...", body.token[:8])
+    return {"ok": True, "message": "Logged out successfully"}
 
 
 # ── Control endpoints ─────────────────────────────────────────────────────────

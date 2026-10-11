@@ -6,14 +6,61 @@ import PositionWidget from './components/PositionWidget';
 import ControlPanel from './components/ControlPanel';
 import TradeLedger from './components/TradeLedger';
 import BacktestModal from './components/BacktestModal';
+import LoginPage from './components/LoginPage';
 
 export default function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [status, setStatus] = useState(null);
   const [connected, setConnected] = useState(false);
   const wsRef = useRef(null);
 
+  // Check 2FA Auth Session on initial load
+  useEffect(() => {
+    const token = localStorage.getItem('shark_auth_token');
+    if (!token) {
+      setIsAuthenticated(false);
+      setIsCheckingAuth(false);
+      return;
+    }
+
+    fetch(`/api/auth/check?token=${encodeURIComponent(token)}`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.authenticated) {
+          setIsAuthenticated(true);
+        } else {
+          localStorage.removeItem('shark_auth_token');
+          setIsAuthenticated(false);
+        }
+      })
+      .catch((err) => {
+        console.warn('Auth check failed:', err);
+        setIsAuthenticated(false);
+      })
+      .finally(() => {
+        setIsCheckingAuth(false);
+      });
+  }, []);
+
+  const handleLogout = async () => {
+    const token = localStorage.getItem('shark_auth_token');
+    try {
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token }),
+      });
+    } catch (e) {
+      console.warn('Logout error:', e);
+    }
+    localStorage.removeItem('shark_auth_token');
+    setIsAuthenticated(false);
+  };
+
   // REST fallback fetch
   const fetchStatus = useCallback(async () => {
+    if (!isAuthenticated) return;
     try {
       const res = await fetch('/api/status');
       if (res.ok) {
@@ -23,7 +70,7 @@ export default function App() {
     } catch (e) {
       console.warn('REST status fetch failed:', e);
     }
-  }, []);
+  }, [isAuthenticated]);
 
   // WebSocket lifecycle
   useEffect(() => {
@@ -161,6 +208,26 @@ export default function App() {
     }
   };
 
+  // Show loader while checking stored session
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen bg-[#080b11] text-slate-100 flex flex-col items-center justify-center space-y-4">
+        <div className="w-12 h-12 rounded-2xl bg-[#0e1424] border border-[#1b263b] flex items-center justify-center shadow-lg animate-pulse">
+          <span className="text-2xl">🦈</span>
+        </div>
+        <div className="flex items-center space-x-2 text-xs font-mono text-slate-400">
+          <span className="w-2 h-2 rounded-full bg-[#00e5ff] animate-ping" />
+          <span>VERIFYING SHARK TERMINAL SECURITY...</span>
+        </div>
+      </div>
+    );
+  }
+
+  // Display Telegram 2FA Login Screen if unauthenticated
+  if (!isAuthenticated) {
+    return <LoginPage onLoginSuccess={() => setIsAuthenticated(true)} />;
+  }
+
   return (
     <div className="min-h-screen bg-[#080b11] text-slate-100 flex flex-col">
       {/* Top Navigation */}
@@ -173,6 +240,7 @@ export default function App() {
         onPause={handlePause}
         onResume={handleResume}
         onFlatten={handleFlatten}
+        onLogout={handleLogout}
       />
 
       {/* Main Terminal Body */}

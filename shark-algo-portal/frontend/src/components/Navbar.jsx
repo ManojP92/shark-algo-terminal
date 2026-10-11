@@ -1,7 +1,7 @@
 import React from 'react';
-import { Activity, ShieldAlert, Play, Pause, Zap, Wifi, WifiOff, Sparkles, Wallet } from 'lucide-react';
+import { Activity, ShieldAlert, Play, Pause, Zap, Wifi, WifiOff, Sparkles, Wallet, Lock } from 'lucide-react';
 
-export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', onSymbolChange, onOpenBacktest, onPause, onResume, onFlatten }) {
+export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', onSymbolChange, onOpenBacktest, onPause, onResume, onFlatten, onLogout }) {
   const isRunning = status?.running && !status?.paused;
   const isHalted = status?.risk?.halted;
   const isLive = status?.mode === 'LIVE';
@@ -165,6 +165,18 @@ export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', o
             <ShieldAlert className="w-3.5 h-3.5" />
             <span>FLATTEN ALL</span>
           </button>
+
+          {/* Lock Terminal / Logout Button */}
+          {onLogout && (
+            <button
+              onClick={onLogout}
+              className="flex items-center space-x-1 px-2.5 py-1.5 bg-[#172136] hover:bg-[#202c46] text-slate-300 hover:text-white border border-[#283858] rounded text-xs font-mono transition cursor-pointer"
+              title="Lock Terminal & Log Out"
+            >
+              <Lock className="w-3.5 h-3.5 text-slate-400" />
+              <span>Lock</span>
+            </button>
+          )}
         </div>
       </div>
     </header>
