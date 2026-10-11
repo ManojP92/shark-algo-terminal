@@ -28,6 +28,7 @@ import threading
 import time
 from typing import Optional
 
+import pandas as pd
 import requests
 import uvicorn
 from dotenv import load_dotenv
@@ -40,7 +41,8 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 from shark_client import SharkClient
 from risk_manager import RiskManager
 from telegram_alerts import TelegramAlerter
-from executor import Executor
+from executor import Executor, INSTRUMENT_CONFIGS
+from backtester import run_backtest, run_monte_carlo
 
 log = logging.getLogger("api_server")
 logging.basicConfig(
@@ -256,6 +258,95 @@ def update_sizing(req: SizingRequest):
             "min_qty":            rm.cfg.min_qty,
         }
     }
+
+
+# ── Backtesting & Monte Carlo ────────────────────────────────────────────────
+
+class BacktestRequest(BaseModel):
+    pair: Optional[str] = "BTCUSDT"
+    interval: Optional[str] = "15m"
+    days: Optional[int] = 14
+    capital: Optional[float] = 100.0
+    risk_pct: Optional[float] = 1.0
+    leverage: Optional[int] = 10
+    dc_period: Optional[int] = 25
+    adx_min: Optional[float] = 20.0
+    atr_mult_sl: Optional[float] = 1.5
+    atr_mult_trail: Optional[float] = 3.0
+    monte_carlo_runs: Optional[int] = 500
+
+
+@app.post("/api/backtest")
+def execute_backtest(req: BacktestRequest):
+    """
+    Run institutional backtest & Monte Carlo simulation over historical candles.
+    """
+    pair = req.pair.upper() if req.pair else "BTCUSDT"
+    interval = req.interval or "15m"
+    days = min(30, max(1, req.days or 14))
+
+    # Instrument specs
+    inst = INSTRUMENT_CONFIGS.get(pair, INSTRUMENT_CONFIGS["BTCUSDT"])
+    min_qty = inst["min_qty"]
+    step_size = inst["step_size"]
+    min_notional = inst["min_notional"]
+
+    # Fetch historical klines from Node bridge
+    try:
+        url = f"{NODE_URL}/api/klines/history?interval={interval}&days={days}&pair={pair}"
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        body = resp.json()
+        if not body.get("ok") or not body.get("data"):
+            raise HTTPException(
+                status_code=502,
+                detail=f"No historical candles returned: {body.get('error', 'empty data')}"
+            )
+
+        raw_candles = body["data"]
+        df = pd.DataFrame(raw_candles)
+        df.rename(columns={"startTime": "timestamp"}, inplace=True)
+        df["timestamp"] = pd.to_datetime(df["timestamp"].astype("int64"), unit="ms", utc=True)
+        for col in ["open", "high", "low", "close", "volume"]:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        df.sort_values("timestamp", inplace=True)
+        df.reset_index(drop=True, inplace=True)
+
+        bt_result = run_backtest(
+            df=df,
+            initial_capital=req.capital or 100.0,
+            risk_pct=req.risk_pct or 1.0,
+            leverage=req.leverage or 10,
+            min_qty=min_qty,
+            step_size=step_size,
+            min_notional=min_notional,
+            dc_period=req.dc_period or 25,
+            adx_min=req.adx_min or 20.0,
+            atr_mult_sl=req.atr_mult_sl or 1.5,
+            atr_mult_trail=req.atr_mult_trail or 3.0,
+        )
+
+        trade_returns = [t["net_pnl"] for t in bt_result["trades"]]
+        mc_result = run_monte_carlo(
+            trade_returns=trade_returns,
+            initial_capital=req.capital or 100.0,
+            num_simulations=req.monte_carlo_runs or 500,
+        )
+
+        return {
+            "ok": True,
+            "pair": pair,
+            "interval": interval,
+            "days": days,
+            "candles_count": len(df),
+            "summary": bt_result["summary"],
+            "equity_curve": bt_result["equity_curve"],
+            "trades": bt_result["trades"],
+            "monte_carlo": mc_result,
+        }
+    except Exception as err:
+        log.error("Backtest failed: %s", err, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(err))
 
 
 # ══════════════════════════════════════════════════════════════════════════════

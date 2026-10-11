@@ -5,6 +5,7 @@ import ChartWidget from './components/ChartWidget';
 import PositionWidget from './components/PositionWidget';
 import ControlPanel from './components/ControlPanel';
 import TradeLedger from './components/TradeLedger';
+import BacktestModal from './components/BacktestModal';
 
 export default function App() {
   const [status, setStatus] = useState(null);
@@ -120,6 +121,7 @@ export default function App() {
   };
 
   const [selectedSymbol, setSelectedSymbol] = useState('BTCUSDT');
+  const [isBacktestOpen, setIsBacktestOpen] = useState(false);
   const activeSymbol = status?.symbol || selectedSymbol;
 
   const handleSymbolChange = async (newSymbol) => {
@@ -167,6 +169,7 @@ export default function App() {
         connected={connected}
         currentSymbol={activeSymbol}
         onSymbolChange={handleSymbolChange}
+        onOpenBacktest={() => setIsBacktestOpen(true)}
         onPause={handlePause}
         onResume={handleResume}
         onFlatten={handleFlatten}
@@ -236,6 +239,13 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* Strategy Backtesting & Monte Carlo Modal */}
+      <BacktestModal
+        isOpen={isBacktestOpen}
+        onClose={() => setIsBacktestOpen(false)}
+        defaultPair={activeSymbol}
+      />
     </div>
   );
 }

@@ -44,20 +44,7 @@ app.get('/health', (_req, res) => {
   });
 });
 
-// ── Market data endpoints ──────────────────────────────────────────────────────
-app.get('/api/klines/:interval', async (req, res) => {
-  try {
-    const { interval } = req.params;
-    const limit = parseInt(req.query.limit ?? '200', 10);
-    const pair  = req.query.pair ?? process.env.TRADING_PAIR ?? 'BTCUSDT';
-    const data  = await fetchKlines({ pair, interval, limit });
-    res.json({ ok: true, data });
-  } catch (err) {
-    res.status(500).json({ ok: false, error: err.message });
-  }
-});
-
-// ── Historical klines (paginated) — used by Phase 2 regime detector ───────────
+// ── Historical klines (paginated) — used by backtester & regime detector ───────
 /**
  * GET /api/klines/history?interval=15m&days=30&pair=BTCUSDT
  *
@@ -139,6 +126,19 @@ app.get('/api/klines/history', async (req, res) => {
     });
   } catch (err) {
     logger.error('History fetch failed:', err.message);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// ── Market data endpoints ──────────────────────────────────────────────────────
+app.get('/api/klines/:interval', async (req, res) => {
+  try {
+    const { interval } = req.params;
+    const limit = parseInt(req.query.limit ?? '200', 10);
+    const pair  = req.query.pair ?? process.env.TRADING_PAIR ?? 'BTCUSDT';
+    const data  = await fetchKlines({ pair, interval, limit });
+    res.json({ ok: true, data });
+  } catch (err) {
     res.status(500).json({ ok: false, error: err.message });
   }
 });

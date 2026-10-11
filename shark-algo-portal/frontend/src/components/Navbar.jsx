@@ -1,7 +1,7 @@
 import React from 'react';
-import { Activity, ShieldAlert, Play, Pause, Zap, Wifi, WifiOff } from 'lucide-react';
+import { Activity, ShieldAlert, Play, Pause, Zap, Wifi, WifiOff, Sparkles } from 'lucide-react';
 
-export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', onSymbolChange, onPause, onResume, onFlatten }) {
+export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', onSymbolChange, onOpenBacktest, onPause, onResume, onFlatten }) {
   const isRunning = status?.running && !status?.paused;
   const isHalted = status?.risk?.halted;
   const isLive = status?.mode === 'LIVE';
@@ -111,6 +111,16 @@ export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', o
             <span className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-rose-400 animate-ping' : 'bg-[#ffd600]'}`}></span>
             <span>{isLive ? 'LIVE CAPITAL' : 'PAPER TRADING'}</span>
           </div>
+
+          {/* Backtest & Monte Carlo Button */}
+          <button
+            onClick={onOpenBacktest}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-[#141f33] hover:bg-[#1d2d4a] text-[#00e5ff] border border-[#23385d] rounded text-xs font-bold font-mono transition cursor-pointer shadow-sm"
+            title="Open Strategy Backtester & Monte Carlo Simulation"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-[#00e5ff]" />
+            <span>Backtest</span>
+          </button>
 
           {/* Pause / Resume Button */}
           {isRunning ? (
