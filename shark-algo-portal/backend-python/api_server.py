@@ -267,22 +267,43 @@ def resume_bot():
     return {"ok": True, "paused": False}
 
 
+@app.post("/api/control/close-position")
+def close_position_endpoint():
+    """
+    Manually close active position from Position Widget at market price.
+    Computes PnL, updates paper wallet or live exchange, logs trade, and keeps bot active.
+    """
+    global _executor
+    if _executor is None:
+        raise HTTPException(status_code=503, detail="Trading engine is not running")
+    try:
+        result = _executor.close_position(reason="Dashboard Manual Exit")
+        log.info("Position manually closed via dashboard: %s", result)
+        return {"ok": True, "result": result}
+    except Exception as err:
+        log.error("Manual position close failed: %s", err, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(err))
+
+
 @app.post("/api/control/flatten")
 def emergency_flatten():
+    """
+    Emergency flatten: closes all positions, halts trading engine loop, and alerts.
+    """
     global _executor
-    symbol = _executor.symbol if _executor else os.getenv("TRADING_PAIR", "BTCUSDT")
-    client = SharkClient()
-    result = client.emergency_flatten(symbol)
+    if _executor is None:
+        symbol = os.getenv("TRADING_PAIR", "BTCUSDT")
+        client = SharkClient()
+        res = client.emergency_flatten(symbol)
+        return {"ok": True, "result": res}
+    try:
+        result = _executor.flatten(reason="Dashboard Emergency Flatten")
+        log.critical("EMERGENCY FLATTEN executed via dashboard: %s", result)
+        return {"ok": True, "result": result}
+    except Exception as err:
+        log.error("Emergency flatten failed: %s", err, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(err))
 
-    if _executor:
-        _executor._running = False
-        _executor.position = None
-
-    tg = TelegramAlerter()
-    tg.emergency_flatten(symbol, "Dashboard emergency button pressed")
-
-    log.critical("EMERGENCY FLATTEN triggered via dashboard for %s", symbol)
-    return {"ok": True, "result": result}
 
 
 class SymbolRequest(BaseModel):

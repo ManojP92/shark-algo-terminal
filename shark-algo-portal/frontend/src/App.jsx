@@ -154,18 +154,34 @@ export default function App() {
     }
   };
 
+  const handleClosePosition = async () => {
+    try {
+      const res = await fetch('/api/control/close-position', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        throw new Error(data.detail || data.error || 'Failed to close position');
+      }
+      alert('✅ Position closed successfully at market price');
+      fetchStatus();
+    } catch (e) {
+      alert('Error closing position: ' + e.message);
+    }
+  };
+
   const handleFlatten = async () => {
     try {
       const res = await fetch('/api/control/flatten', { method: 'POST' });
       const data = await res.json();
-      if (data.ok) {
-        alert('✅ Emergency Flatten executed successfully');
+      if (!res.ok || !data.ok) {
+        throw new Error(data.detail || data.error || 'Failed to execute emergency flatten');
       }
+      alert('✅ Emergency Flatten executed: position closed and bot halted');
       fetchStatus();
     } catch (e) {
       alert('Error executing flatten: ' + e.message);
     }
   };
+
 
   const [selectedSymbol, setSelectedSymbol] = useState('BTCUSDT');
   const [isBacktestOpen, setIsBacktestOpen] = useState(false);
@@ -274,7 +290,9 @@ export default function App() {
               <PositionWidget
                 position={status?.position}
                 onFlatten={handleFlatten}
+                onClose={handleClosePosition}
               />
+
             </div>
             <div className="flex-1 min-h-[260px]">
               <ControlPanel

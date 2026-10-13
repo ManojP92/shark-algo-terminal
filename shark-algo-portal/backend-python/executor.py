@@ -175,23 +175,6 @@ class Executor:
         return True
 
     def set_symbol(self, sym: str):
-        sym_upper = sym.upper()
-        if sym_upper in INSTRUMENT_CONFIGS:
-            self.symbol = sym_upper
-            self._apply_instrument_config(sym_upper)
-            log.info("Active symbol switched to %s", sym_upper)
-            self._log_event(f"Instrument changed to {sym_upper}")
-            return True
-        return False
-
-    def _apply_instrument_config(self, sym: str):
-        if sym in INSTRUMENT_CONFIGS:
-            cfg = INSTRUMENT_CONFIGS[sym]
-            self.rm.cfg.min_qty = cfg["min_qty"]
-            self.rm.cfg.step_size = cfg["step_size"]
-            self.rm.cfg.manual_lot_size = cfg["default_lots"]
-
-    def set_symbol(self, sym: str):
         sym = sym.upper()
         if sym in INSTRUMENT_CONFIGS:
             if self.position is not None:
@@ -206,6 +189,14 @@ class Executor:
             )
             return True
         return False
+
+    def _apply_instrument_config(self, sym: str):
+        if sym in INSTRUMENT_CONFIGS:
+            cfg = INSTRUMENT_CONFIGS[sym]
+            self.rm.cfg.min_qty = cfg["min_qty"]
+            self.rm.cfg.step_size = cfg["step_size"]
+            self.rm.cfg.manual_lot_size = cfg["default_lots"]
+
 
     def _log_event(self, msg: str):
         ts = datetime.now(timezone.utc).strftime("%H:%M:%S")
@@ -334,7 +325,55 @@ class Executor:
 
         self.position = None
 
+    def close_position(self, reason: str = "Manual Close") -> dict:
+        """
+        Manually close the active position cleanly.
+        Calculates PnL, executes opposing market order (reduceOnly=True) if LIVE,
+        updates paper wallet if PAPER, updates risk manager, records trade in history,
+        and fires alerts. Keeps the bot running.
+        """
+        if self.position is None:
+            if self.mode == "LIVE":
+                try:
+                    res = self.client.emergency_flatten(self.symbol)
+                    self.rm.position_closed()
+                    return {"ok": True, "message": "No active position in memory; checked exchange", "exchange": res}
+                except Exception as err:
+                    log.error("Failed to check exchange positions: %s", err)
+            return {"ok": True, "message": "No open position to close"}
+
+        pos = self.position
+        exit_price = self.latest_market.get("mark_price", 0.0)
+        if exit_price <= 0:
+            try:
+                ticker = self.client.get_ticker(pos.symbol)
+                exit_price = float(ticker.get("c") or ticker.get("lastPrice") or pos.entry)
+            except Exception:
+                exit_price = pos.entry
+
+        self._close_position(pos, exit_price, reason=reason)
+        return {
+            "ok": True,
+            "symbol": pos.symbol,
+            "side": pos.side,
+            "qty": pos.qty,
+            "entry": pos.entry,
+            "exit": exit_price,
+            "reason": reason,
+        }
+
+    def flatten(self, reason: str = "Emergency Flatten") -> dict:
+        """
+        Emergency flatten: close position cleanly, halt trading engine loop, and alert.
+        """
+        close_res = self.close_position(reason=reason)
+        self._running = False
+        self._log_event(f"FLATTEN: Bot halted and position flattened ({reason})")
+        self.tg.emergency_flatten(self.symbol, reason)
+        return {"ok": True, "closed": close_res, "halted": True}
+
     # ── Main loop ─────────────────────────────────────────────────────────────
+
 
     def step(self) -> None:
         """Single iteration of the trading loop — called every POLL_SECONDS."""

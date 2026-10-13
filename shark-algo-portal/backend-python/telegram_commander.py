@@ -148,9 +148,12 @@ class TelegramCommander:
             self._cmd_live(executor, msg_id)
         elif cmd == "/paper":
             self._cmd_paper(executor, msg_id)
-        elif cmd in ("/flatten", "/panic", "/close"):
+        elif cmd in ("/close", "/exit"):
+            self._cmd_close(executor, msg_id)
+        elif cmd in ("/flatten", "/panic"):
             self._cmd_flatten(executor, msg_id)
         elif cmd in ("/strategy", "/strat"):
+
             self._cmd_strategy(executor, args, msg_id)
         elif cmd in ("/pair", "/symbol"):
             self._cmd_pair(executor, args, msg_id)
@@ -266,13 +269,27 @@ class TelegramCommander:
             msg_id,
         )
 
+    def _cmd_close(self, executor, msg_id):
+        if not executor.position:
+            self.send_message("ℹ️ No active position to close.", msg_id)
+            return
+        pos = executor.position
+        res = executor.close_position(reason="Telegram /close command")
+        exit_px = res.get("exit", 0.0)
+        self.send_message(
+            "✅ <b>POSITION CLOSED</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"Pair: <b>{pos.symbol}</b> ({pos.side})\n"
+            f"Qty: <code>{pos.qty}</code> @ Entry: ${pos.entry:,.2f}\n"
+            f"Exit: ${exit_px:,.2f}\n"
+            "Status: Market exit executed.\n"
+            "Bot remains active for next setup.",
+            msg_id,
+        )
+
     def _cmd_flatten(self, executor, msg_id):
         symbol = executor.symbol
-        client = executor.client
-        result = client.emergency_flatten(symbol)
-        executor.position = None
-        executor._running = False
-        executor._log_event(f"EMERGENCY FLATTEN executed via Telegram for {symbol}")
+        result = executor.flatten(reason="Telegram /flatten command")
         self.send_message(
             "🆘 <b>EMERGENCY FLATTEN COMPLETED</b>\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -281,6 +298,7 @@ class TelegramCommander:
             "Use /start to resume when ready.",
             msg_id,
         )
+
 
     def _cmd_strategy(self, executor, args, msg_id):
         valid = {
@@ -366,8 +384,10 @@ class TelegramCommander:
             "⏸️ /stop — Pause bot (blocks new entries)\n"
             "🔴 /live — Switch execution mode to LIVE\n"
             "📋 /paper — Switch execution mode to PAPER\n"
-            "🆘 /flatten — Emergency market close all positions\n"
+            "✅ /close — Market exit active position (keeps bot running)\n"
+            "🆘 /flatten — Emergency close all positions & pause bot\n"
             "🧠 /strategy — View or change strategy model\n"
+
             "💱 /pair — View or change trading instrument\n"
             "❓ /help — Show this command menu\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"

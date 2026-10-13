@@ -240,10 +240,10 @@ class SharkClient:
             "side":       side,
             "type":       order_type,
             "quantity":   qty,
-            "reduceOnly": reduce_only,
         }
-        if price:      payload["price"]     = price
-        if stop_price: payload["stopPrice"] = stop_price
+        if reduce_only: payload["reduceOnly"] = True
+        if price:       payload["price"]      = price
+        if stop_price:  payload["stopPrice"]  = stop_price
 
         res = self._request("POST", "/v1/order/place-order", body=payload, auth=True)
         return {
@@ -257,6 +257,12 @@ class SharkClient:
             "raw":       res,
         }
 
+    def close_position(self, symbol: str, current_side: str, qty: float) -> dict:
+        """Close an open position by placing an opposing MARKET order with reduceOnly=True."""
+        closing_side = "SELL" if current_side.upper() in ("LONG", "BUY") else "BUY"
+        log.info("Closing %s position for %s: %s %s with reduceOnly=True", current_side, symbol, closing_side, qty)
+        return self.place_order(symbol, closing_side, "MARKET", qty, reduce_only=True)
+
     def cancel_order(self, symbol: str, client_order_id: str) -> dict:
         """DELETE /v1/order/delete-order"""
         if not self._order_guard():
@@ -267,11 +273,26 @@ class SharkClient:
         return {"ok": True, "orderId": client_order_id, "raw": res}
 
     def emergency_flatten(self, symbol: str) -> dict:
-        """Close open positions."""
+        """
+        Close all open positions on the exchange for the symbol.
+        Queries open positions from exchange, and places opposing market orders with reduceOnly=True.
+        """
         if not self._order_guard():
             log.info("[PAPER] Emergency flatten simulated for %s", symbol)
             return {"ok": True, "symbol": symbol, "paper": True, "action": "flatten"}
 
-        res = self._request("POST", "/v1/positions/closeAll",
-                            body={"contractPair": symbol}, auth=True)
-        return {"ok": True, "symbol": symbol, "raw": res}
+        closed_orders = []
+        try:
+            positions = self.get_positions(symbol)
+            pos_list = positions if isinstance(positions, list) else (positions.get("data", []) if isinstance(positions, dict) else [])
+            for p in pos_list:
+                size = float(p.get("size") or p.get("positionAmt") or p.get("activeLots") or p.get("quantity") or 0.0)
+                if abs(size) > 0:
+                    pos_side = p.get("side") or ("LONG" if size > 0 else "SHORT")
+                    res = self.close_position(symbol, pos_side, abs(size))
+                    closed_orders.append(res)
+        except Exception as err:
+            log.error("Emergency flatten querying positions failed: %s", err)
+
+        return {"ok": True, "symbol": symbol, "closed_orders": closed_orders, "paper": False}
+

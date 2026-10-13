@@ -1,7 +1,23 @@
 import React from 'react';
 import { ArrowUpRight, ArrowDownRight, ShieldCheck, Crosshair, AlertTriangle } from 'lucide-react';
 
-export default function PositionWidget({ position, onFlatten }) {
+export default function PositionWidget({ position, onFlatten, onClose }) {
+  const [closing, setClosing] = React.useState(false);
+
+  const handleClose = async () => {
+    if (closing) return;
+    setClosing(true);
+    try {
+      if (onClose) {
+        await onClose();
+      } else if (onFlatten) {
+        await onFlatten();
+      }
+    } finally {
+      setClosing(false);
+    }
+  };
+
   if (!position) {
     return (
       <div className="bg-[#0e131f] border border-[#1b2336] rounded-xl p-5 shadow-xl flex flex-col justify-between h-full">
@@ -102,11 +118,13 @@ export default function PositionWidget({ position, onFlatten }) {
 
       {/* Close Action */}
       <button
-        onClick={onFlatten}
-        className="w-full py-2 bg-rose-600/80 hover:bg-rose-600 text-white font-medium rounded-lg text-xs transition border border-rose-500/30 flex items-center justify-center space-x-2 cursor-pointer"
+        onClick={handleClose}
+        disabled={closing}
+        className="w-full py-2 bg-rose-600/80 hover:bg-rose-600 disabled:opacity-50 text-white font-medium rounded-lg text-xs transition border border-rose-500/30 flex items-center justify-center space-x-2 cursor-pointer"
       >
-        <span>Market Close Position</span>
+        <span>{closing ? 'Closing Position...' : 'Market Close Position'}</span>
       </button>
     </div>
   );
 }
+

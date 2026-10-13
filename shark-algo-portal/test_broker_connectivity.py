@@ -38,8 +38,12 @@ backend_py_dir = os.path.join(os.path.dirname(__file__), "backend-python")
 if backend_py_dir not in sys.path:
     sys.path.insert(0, backend_py_dir)
 
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env.example"))
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"))
+env_file = os.path.join(os.path.dirname(__file__), ".env")
+if os.path.exists(env_file):
+    load_dotenv(dotenv_path=env_file, override=True)
+else:
+    load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env.example"))
+
 
 from shark_client import SharkClient, SharkClientError
 from telegram_alerts import TelegramAlerter
