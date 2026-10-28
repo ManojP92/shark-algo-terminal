@@ -125,6 +125,7 @@ class Executor:
         self.strategy = get_strategy(self.strategy_name)
         self.position: Optional[OpenPosition] = None
         self._running = True
+        self._stats_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         self._stats   = {"trades": 0, "wins": 0, "daily_pnl": 0.0}
         self.trade_history: list[dict] = []
         self.recent_logs: list[str] = []
@@ -296,6 +297,8 @@ class Executor:
         self.rm.position_closed()
         if self.mode == "PAPER":
             self.paper_wallet = max(1.0, round(self.paper_wallet + pnl, 2))
+        now_utc = datetime.now(timezone.utc)
+        self._ensure_day_reset()
         self._stats["trades"] += 1
         if pnl > 0:
             self._stats["wins"] += 1
@@ -303,7 +306,8 @@ class Executor:
 
         trade_record = {
             "id": f"TR-{int(time.time()*1000)}",
-            "time": datetime.now(timezone.utc).strftime("%H:%M:%S"),
+            "time": now_utc.strftime("%H:%M:%S"),
+            "date": now_utc.strftime("%Y-%m-%d"),
             "side": pos.side,
             "symbol": pos.symbol,
             "qty": pos.qty,
@@ -324,6 +328,17 @@ class Executor:
         )
 
         self.position = None
+
+    def _ensure_day_reset(self) -> None:
+        """Reset daily stats and ensure risk manager state resets at UTC midnight."""
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if getattr(self, "_stats_date", "") != today:
+            log.info("New UTC day %s — resetting executor daily metrics", today)
+            self._stats_date = today
+            self._stats["daily_pnl"] = 0.0
+            self._stats["trades"] = 0
+            self._stats["wins"] = 0
+        self.rm._ensure_day_reset(self.get_equity())
 
     def close_position(self, reason: str = "Manual Close") -> dict:
         """
@@ -380,6 +395,7 @@ class Executor:
         try:
             df     = self.fetch_klines()
             equity = self.get_equity()
+            self._ensure_day_reset()
             close  = float(df.iloc[-2]["close"])   # last closed bar
             mark_price = float(df.iloc[-1]["close"]) # latest forming bar close
 
@@ -541,6 +557,12 @@ class Executor:
                 pnl_pct = ((self.position.entry - mark_price) / self.position.entry) * 100
                 liq_price = self.position.entry * 1.10
 
+        self._ensure_day_reset()
+        today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today_trades = [t for t in self.trade_history if t.get("date") == today_str]
+        daily_realized_pnl = sum(t.get("pnl", 0.0) for t in today_trades) if today_trades else float(self._stats.get("daily_pnl", 0.0))
+        total_daily_pnl = round(daily_realized_pnl + unrealized_pnl, 2)
+
         trades_count = self._stats["trades"]
         wins_count = self._stats["wins"]
         win_rate = (wins_count / trades_count * 100) if trades_count > 0 else 0.0
@@ -565,6 +587,7 @@ class Executor:
                 "currency":     "USDT",
                 "mode":         self.mode,
                 "capital_base": self.rm.cfg.capital_base,
+                "paper_wallet": round(self.paper_wallet, 2),
             },
             "position":   {
                 "side":           self.position.side,
@@ -581,12 +604,14 @@ class Executor:
                 "scaled_out":     self.position.scaled_out,
             } if self.position else None,
             "stats": {
-                "trades":        trades_count,
-                "wins":          wins_count,
-                "win_rate":      round(win_rate, 1),
-                "profit_factor": profit_factor,
-                "daily_pnl":     round(self._stats["daily_pnl"], 2),
-                "max_drawdown":  "1.8%",
+                "trades":          trades_count,
+                "wins":            wins_count,
+                "win_rate":        round(win_rate, 1),
+                "profit_factor":   profit_factor,
+                "daily_pnl":       round(daily_realized_pnl, 2),
+                "unrealized_pnl":  round(unrealized_pnl, 2),
+                "total_daily_pnl": total_daily_pnl,
+                "max_drawdown":    "1.8%",
             },
             "risk": {
                 "consecutive_losses": self.rm.state.consecutive_losses,

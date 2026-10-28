@@ -152,6 +152,8 @@ class TelegramCommander:
             self._cmd_close(executor, msg_id)
         elif cmd in ("/flatten", "/panic"):
             self._cmd_flatten(executor, msg_id)
+        elif cmd in ("/reset", "/reset_wallet"):
+            self._cmd_reset(executor, args, msg_id)
         elif cmd in ("/strategy", "/strat"):
 
             self._cmd_strategy(executor, args, msg_id)
@@ -227,12 +229,38 @@ class TelegramCommander:
 
     def _cmd_start(self, executor, msg_id):
         executor._running = True
+        executor.rm.state.halted = False
+        executor.rm.state.cooldown_until_ts = 0.0
         executor._log_event("Engine RESUMED via Telegram command")
         self.send_message(
             "▶️ <b>TRADING ENGINE RESUMED</b>\n"
             "━━━━━━━━━━━━━━━━━━━━━━\n"
             "✅ Autonomous order evaluation is now <b>ACTIVE</b>.\n"
+            "🛡️ Circuit breaker halts cleared.\n"
             f"Mode: <b>{executor.mode}</b> | Pair: <b>{executor.symbol}</b>",
+            msg_id,
+        )
+
+    def _cmd_reset(self, executor, args, msg_id):
+        amount = 100.0
+        if args:
+            try:
+                amount = float(args[0])
+            except ValueError:
+                pass
+        executor.paper_wallet = amount
+        executor.rm.cfg.capital_base = amount
+        executor.rm.state.day_start_equity = amount
+        executor.rm.state.daily_pnl = 0.0
+        executor.rm.state.halted = False
+        executor.rm.state.consecutive_losses = 0
+        executor._stats["daily_pnl"] = 0.0
+        executor._log_event(f"Paper wallet balance reset to ${amount:.2f}")
+        self.send_message(
+            "🔄 <b>PAPER WALLET RESET</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"💵 New Balance: <b>${amount:,.2f} USDT</b>\n"
+            "Daily P&L and circuit breaker metrics reset.",
             msg_id,
         )
 

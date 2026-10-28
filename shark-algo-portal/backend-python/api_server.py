@@ -257,13 +257,16 @@ def pause_bot():
 def resume_bot():
     global _paused, _executor, _executor_thread
     _paused = False
-    if _executor and not _executor._running:
+    if _executor:
         _executor._running = True
-        _executor_thread = threading.Thread(
-            target=_executor.run, daemon=True
-        )
-        _executor_thread.start()
-        log.info("Bot RESUMED via dashboard")
+        _executor.rm.state.halted = False   # Clear circuit breaker halt on explicit user resume!
+        _executor.rm.state.cooldown_until_ts = 0.0  # Clear cooldown
+        if not _executor_thread or not _executor_thread.is_alive():
+            _executor_thread = threading.Thread(
+                target=_executor.run, daemon=True
+            )
+            _executor_thread.start()
+        log.info("Bot RESUMED and circuit breakers reset via dashboard")
     return {"ok": True, "paused": False}
 
 
@@ -357,12 +360,39 @@ class SizingRequest(BaseModel):
     risk_per_trade_pct: Optional[float] = None # e.g. 1.0, 2.0
     capital_base: Optional[float] = None       # e.g. 100.0
     leverage: Optional[int] = None             # e.g. 10
+    reset_wallet: Optional[bool] = False       # ONLY reset paper wallet if explicitly requested!
+
+
+class ResetWalletRequest(BaseModel):
+    balance: Optional[float] = 100.0
+
+
+@app.post("/api/control/wallet/reset")
+def reset_paper_wallet(req: ResetWalletRequest = ResetWalletRequest()):
+    """
+    Explicitly reset paper wallet compounding balance to a desired baseline (default $100).
+    """
+    global _executor
+    if _executor is None:
+        raise HTTPException(status_code=503, detail="Executor not running")
+    amount = max(5.0, round(req.balance or 100.0, 2))
+    _executor.paper_wallet = amount
+    _executor.rm.cfg.capital_base = amount
+    _executor.rm.state.day_start_equity = amount
+    _executor.rm.state.daily_pnl = 0.0
+    _executor.rm.state.halted = False
+    _executor.rm.state.consecutive_losses = 0
+    _executor._stats["daily_pnl"] = 0.0
+    _executor._log_event(f"Paper wallet balance explicitly reset to ${amount:.2f}")
+    log.info("Paper wallet explicitly reset to $%.2f", amount)
+    return {"ok": True, "paper_wallet": amount}
 
 
 @app.post("/api/control/sizing")
 def update_sizing(req: SizingRequest):
     """
     Update position sizing, compounding, and risk settings on the fly.
+    Never wipes active paper_wallet unless reset_wallet=True is explicitly supplied.
     """
     global _executor
     if _executor is None:
@@ -377,7 +407,10 @@ def update_sizing(req: SizingRequest):
         rm.cfg.risk_per_trade_pct = round(req.risk_per_trade_pct, 2)
     if req.capital_base is not None and req.capital_base > 0:
         rm.cfg.capital_base = round(req.capital_base, 2)
-        _executor.paper_wallet = round(req.capital_base, 2)
+        # CRITICAL BUGFIX: Never overwrite running paper_wallet when simply adjusting sizing/lots!
+        if req.reset_wallet:
+            _executor.paper_wallet = round(req.capital_base, 2)
+            log.info("Paper wallet explicitly reset to $%.2f", _executor.paper_wallet)
     if req.leverage is not None and req.leverage > 0:
         rm.cfg.leverage = req.leverage
 
@@ -395,6 +428,9 @@ def update_sizing(req: SizingRequest):
             "capital_base":       rm.cfg.capital_base,
             "leverage":           rm.cfg.leverage,
             "min_qty":            rm.cfg.min_qty,
+        },
+        "wallet": {
+            "paper_wallet":       _executor.paper_wallet,
         }
     }
 

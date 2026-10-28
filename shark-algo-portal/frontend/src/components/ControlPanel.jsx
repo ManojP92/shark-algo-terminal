@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sliders, Calculator, Zap, Shield, ChevronRight, Plus, Minus, ArrowUpRight } from 'lucide-react';
+import { Sliders, Calculator, Zap, Shield, ChevronRight, Plus, Minus, ArrowUpRight, RotateCcw } from 'lucide-react';
 
 export default function ControlPanel({ status, currentSymbol = 'BTCUSDT', onSymbolChange, onModeChange, onPause, onResume, onFlatten }) {
   const isRunning = status?.running && !status?.paused;
@@ -74,6 +74,20 @@ export default function ControlPanel({ status, currentSymbol = 'BTCUSDT', onSymb
       });
     } catch (e) {
       console.error('Failed to sync sizing:', e);
+    }
+  };
+
+  const handleResetWallet = async () => {
+    if (window.confirm(`Reset paper wallet balance to $${capitalBase.toFixed(2)}?`)) {
+      try {
+        await fetch('/api/control/wallet/reset', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ balance: capitalBase }),
+        });
+      } catch (e) {
+        console.error('Failed to reset wallet:', e);
+      }
     }
   };
 
@@ -262,7 +276,19 @@ export default function ControlPanel({ status, currentSymbol = 'BTCUSDT', onSymb
           <div className="grid grid-cols-2 gap-2.5 mb-3 text-xs font-mono">
             {/* Capital Base Input */}
             <div className="bg-[#090d16] p-2 rounded-lg border border-[#182236]">
-              <span className="text-slate-400 text-[10px] block mb-1">Trading Capital ($)</span>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-slate-400 text-[10px]">Trading Capital ($)</span>
+                {currentMode === 'PAPER' && (
+                  <button
+                    onClick={handleResetWallet}
+                    className="text-[9px] text-[#00e5ff] hover:text-[#4df0ff] flex items-center space-x-1 font-mono transition cursor-pointer"
+                    title="Reset paper wallet to this amount"
+                  >
+                    <RotateCcw className="w-2.5 h-2.5" />
+                    <span>Reset</span>
+                  </button>
+                )}
+              </div>
               <div className="flex items-center space-x-1">
                 <span className="text-slate-400">$</span>
                 <input

@@ -2,8 +2,11 @@ import React from 'react';
 import { TrendingUp, Award, AlertTriangle, ShieldCheck, Activity, DollarSign, Wallet } from 'lucide-react';
 
 export default function MetricsPanel({ stats, risk, market, wallet, equity, mode, capitalBase }) {
-  const dailyPnl = stats?.daily_pnl || 0;
-  const isPnlPositive = dailyPnl >= 0;
+  const dailyRealized = stats?.daily_pnl || 0;
+  const floatingPnl = stats?.unrealized_pnl || 0;
+  const totalDailyPnl = stats?.total_daily_pnl !== undefined ? stats.total_daily_pnl : (dailyRealized + floatingPnl);
+  const isPnlPositive = totalDailyPnl >= 0;
+  const hasFloating = Math.abs(floatingPnl) > 0.001;
   const lossStreak = risk?.consecutive_losses || 0;
   const isCooldown = risk?.cooldown_until && risk.cooldown_until > Date.now() / 1000;
   const isLive = mode === 'LIVE';
@@ -32,9 +35,19 @@ export default function MetricsPanel({ stats, risk, market, wallet, equity, mode
           <DollarSign className={`w-3.5 h-3.5 ${isPnlPositive ? 'text-emerald-400' : 'text-rose-400'}`} />
         </div>
         <div className={`text-xl font-bold font-mono ${isPnlPositive ? 'text-emerald-400' : 'text-rose-400'}`}>
-          {isPnlPositive ? '+' : ''}${dailyPnl.toFixed(2)}
+          {isPnlPositive ? '+' : ''}${totalDailyPnl.toFixed(2)}
         </div>
-        <span className="text-[10px] text-slate-500 font-mono">Realized today</span>
+        <span className="text-[10px] text-slate-400 font-mono">
+          {hasFloating ? (
+            <span>
+              Real: <span className={dailyRealized >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{dailyRealized >= 0 ? '+' : ''}${dailyRealized.toFixed(2)}</span>
+              {' · '}
+              Float: <span className={floatingPnl >= 0 ? 'text-emerald-400' : 'text-rose-400'}>{floatingPnl >= 0 ? '+' : ''}${floatingPnl.toFixed(2)}</span>
+            </span>
+          ) : (
+            'Realized today (UTC)'
+          )}
+        </span>
       </div>
 
       {/* 2. Win Rate */}
