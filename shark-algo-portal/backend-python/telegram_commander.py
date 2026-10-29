@@ -255,6 +255,7 @@ class TelegramCommander:
         executor.rm.state.halted = False
         executor.rm.state.consecutive_losses = 0
         executor._stats["daily_pnl"] = 0.0
+        executor._save_paper_state()
         executor._log_event(f"Paper wallet balance reset to ${amount:.2f}")
         self.send_message(
             "🔄 <b>PAPER WALLET RESET</b>\n"

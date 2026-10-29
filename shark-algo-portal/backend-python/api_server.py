@@ -383,6 +383,7 @@ def reset_paper_wallet(req: ResetWalletRequest = ResetWalletRequest()):
     _executor.rm.state.halted = False
     _executor.rm.state.consecutive_losses = 0
     _executor._stats["daily_pnl"] = 0.0
+    _executor._save_paper_state()
     _executor._log_event(f"Paper wallet balance explicitly reset to ${amount:.2f}")
     log.info("Paper wallet explicitly reset to $%.2f", amount)
     return {"ok": True, "paper_wallet": amount}

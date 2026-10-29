@@ -146,6 +146,9 @@ class Executor:
         self.tg.paper = True
         self.paper_wallet = float(self.rm.cfg.capital_base)
 
+        # Restore paper wallet balance and history if previously saved
+        self._load_paper_state()
+
         # Apply instrument defaults
         self._apply_instrument_config(self.symbol)
 
@@ -328,6 +331,47 @@ class Executor:
         )
 
         self.position = None
+        if self.mode == "PAPER":
+            self._save_paper_state()
+
+    def _save_paper_state(self) -> None:
+        """Persist paper wallet balance and trade history to paper_state.json."""
+        try:
+            state_data = {
+                "paper_wallet": round(self.paper_wallet, 2),
+                "trade_history": self.trade_history,
+                "stats_date": getattr(self, "_stats_date", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
+                "stats": self._stats,
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+            state_file = os.path.join(os.path.dirname(__file__), "paper_state.json")
+            with open(state_file, "w", encoding="utf-8") as f:
+                json.dump(state_data, f, indent=2)
+        except Exception as err:
+            log.warning("Failed to save paper_state.json: %s", err)
+
+    def _load_paper_state(self) -> None:
+        """Load paper wallet balance and trade history from paper_state.json if available."""
+        state_file = os.path.join(os.path.dirname(__file__), "paper_state.json")
+        if os.path.exists(state_file):
+            try:
+                with open(state_file, "r", encoding="utf-8") as f:
+                    state_data = json.load(f)
+                saved_wallet = float(state_data.get("paper_wallet", 0.0))
+                if saved_wallet > 0:
+                    self.paper_wallet = saved_wallet
+                    log.info("Restored paper_wallet from paper_state.json: $%.2f", self.paper_wallet)
+                saved_history = state_data.get("trade_history")
+                if isinstance(saved_history, list) and saved_history:
+                    self.trade_history = saved_history
+                    log.info("Restored %d trades from paper_state.json", len(self.trade_history))
+                saved_date = state_data.get("stats_date")
+                today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                if saved_date == today and isinstance(state_data.get("stats"), dict):
+                    self._stats = state_data["stats"]
+                    self._stats_date = today
+            except Exception as err:
+                log.warning("Failed to load paper_state.json: %s", err)
 
     def _ensure_day_reset(self) -> None:
         """Reset daily stats and ensure risk manager state resets at UTC midnight."""
