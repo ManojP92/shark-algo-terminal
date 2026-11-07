@@ -155,7 +155,6 @@ class Executor:
         log.info("Executor starting | MODE=%s | SYMBOL=%s | INTERVAL=%s | STRATEGY=%s",
                  self.mode, self.symbol, INTERVAL, self.strategy_name)
         self._log_event(f"Executor initialized in {self.mode} mode for {self.symbol} ({INTERVAL}) with {self.strategy_name}")
-        self.tg.bot_started(self.mode, self.symbol)
 
     def set_mode(self, mode: str) -> None:
         """Dynamically toggle between PAPER and LIVE modes."""
