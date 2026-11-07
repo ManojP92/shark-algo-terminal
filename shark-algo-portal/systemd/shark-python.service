@@ -1,0 +1,17 @@
+[Unit]
+Description=Shark Algo Python Strategy Engine & RMS (Port 5001)
+After=network.target shark-node.service
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/shark-algo-portal/backend-python
+EnvironmentFile=/home/ubuntu/shark-algo-portal/.env
+ExecStart=/usr/bin/python3 -m uvicorn api_server:app --host 0.0.0.0 --port 5001
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

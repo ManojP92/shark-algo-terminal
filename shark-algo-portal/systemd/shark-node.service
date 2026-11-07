@@ -1,0 +1,19 @@
+[Unit]
+Description=Shark Algo Node.js Data Bridge (Port 3001)
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+WorkingDirectory=/home/ubuntu/shark-algo-portal/backend-node
+EnvironmentFile=/home/ubuntu/shark-algo-portal/.env
+Environment=NODE_ENV=production
+Environment=PORT=3001
+ExecStart=/usr/bin/node server.mjs
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

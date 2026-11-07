@@ -35,9 +35,12 @@ from urllib.parse import urlencode
 import requests
 from dotenv import load_dotenv
 
-# Load env variables
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env.example"))
-load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
+# Load env variables: prioritize .env over .env.example
+env_path = os.path.join(os.path.dirname(__file__), "..", ".env")
+if os.path.exists(env_path):
+    load_dotenv(dotenv_path=env_path, override=True)
+else:
+    load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env.example"))
 
 log = logging.getLogger("shark_client")
 logging.basicConfig(

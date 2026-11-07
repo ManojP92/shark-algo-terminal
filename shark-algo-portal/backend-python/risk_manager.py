@@ -40,6 +40,9 @@ class RiskConfig:
     daily_loss_cap_pct:     float = float(os.getenv("DAILY_LOSS_LIMIT_PCT",   "2.5"))
     cooldown_minutes:       int   = int(os.getenv("COOLDOWN_MINUTES",         "90"))
     spread_max_pct:         float = float(os.getenv("SPREAD_MAX_PCT",         "0.05"))
+    # Funding Rate Sentiment Filter
+    funding_max_long_pct:   float = float(os.getenv("FUNDING_MAX_LONG_PCT",   "0.04"))  # max +0.04% funding for longs
+    funding_min_short_pct:  float = float(os.getenv("FUNDING_MIN_SHORT_PCT",  "-0.04")) # min -0.04% funding for shorts
     # Lot Sizing & Compounding Settings
     min_qty:                float = 0.001   # Shark Exchange BTC min lot size (0.001 BTC)
     step_size:              float = 0.001   # Order lot increment
@@ -194,6 +197,33 @@ class RiskManager:
                 spread, self.cfg.spread_max_pct,
             )
         return ok
+
+    # ── Funding Rate Sentiment Filter ─────────────────────────────────────────
+
+    def funding_rate_ok(self, side: str, funding_rate_pct: float) -> tuple[bool, str]:
+        """
+        Check if the 8-hour perpetual funding rate is safe for the proposed trade side.
+        - Longs blocked if funding_rate_pct > funding_max_long_pct (crowded longs / squeeze risk)
+        - Shorts blocked if funding_rate_pct < funding_min_short_pct (crowded shorts / squeeze risk)
+        """
+        side_norm = side.upper().strip()
+        if side_norm in ("BUY", "LONG") and funding_rate_pct > self.cfg.funding_max_long_pct:
+            msg = (
+                f"Funding rate too high (+{funding_rate_pct:.4f}% > {self.cfg.funding_max_long_pct:.4f}%) "
+                "— Long entry blocked to prevent liquidation squeeze"
+            )
+            log.warning(msg)
+            return False, msg
+
+        if side_norm in ("SELL", "SHORT") and funding_rate_pct < self.cfg.funding_min_short_pct:
+            msg = (
+                f"Funding rate too negative ({funding_rate_pct:.4f}% < {self.cfg.funding_min_short_pct:.4f}%) "
+                "— Short entry blocked to prevent short squeeze"
+            )
+            log.warning(msg)
+            return False, msg
+
+        return True, "FUNDING_OK"
 
     # ── Position sizing ───────────────────────────────────────────────────────
 
