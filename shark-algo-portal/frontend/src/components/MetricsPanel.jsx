@@ -79,28 +79,28 @@ export default function MetricsPanel({ stats, risk, market, wallet, equity, mode
       {/* 4. Momentum / ADX */}
       <div className="bg-[#0e131f] border border-[#1b2336] rounded-xl p-3.5 shadow-lg">
         <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
-          <span className="font-mono uppercase tracking-wider text-[11px]">ADX (14)</span>
+          <span className="font-mono uppercase tracking-wider text-[11px]">15m ADX (Gate)</span>
           <Activity className="w-3.5 h-3.5 text-sky-400" />
         </div>
         <div className="text-xl font-bold font-mono text-white">
           {market?.adx || '—'}
         </div>
-        <span className={`text-[10px] font-mono ${market?.adx >= 20 ? 'text-emerald-400' : 'text-amber-400'}`}>
-          {market?.adx >= 20 ? 'Momentum active (≥20)' : 'Chop filter (<20)'}
+        <span className={`text-[10px] font-mono ${market?.adx >= 22 ? 'text-emerald-400' : 'text-amber-400'}`}>
+          {market?.adx >= 22 ? 'Trend active (≥22)' : 'Chop filter (<22)'}
         </span>
       </div>
 
       {/* 5. ATR Volatility */}
       <div className="bg-[#0e131f] border border-[#1b2336] rounded-xl p-3.5 shadow-lg">
         <div className="flex items-center justify-between text-slate-400 text-xs mb-1">
-          <span className="font-mono uppercase tracking-wider text-[11px]">ATR (14)</span>
-          <span className="text-[10px] font-mono text-slate-500">Trailing Stop</span>
+          <span className="font-mono uppercase tracking-wider text-[11px]">5m ATR (Stop)</span>
+          <span className="text-[10px] font-mono text-[#00e5ff]">15m/5m MTF</span>
         </div>
         <div className="text-xl font-bold font-mono text-white">
           ${market?.atr || '—'}
         </div>
         <span className="text-[10px] text-slate-500 font-mono">
-          3.0x: ${(market?.atr * 3 || 0).toFixed(1)}
+          SL: ${(market?.atr * 1.2 || 0).toFixed(1)} · Trail: ${(market?.atr * 3.0 || 0).toFixed(1)}
         </span>
       </div>
 

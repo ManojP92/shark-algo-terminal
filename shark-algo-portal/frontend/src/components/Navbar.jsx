@@ -83,7 +83,7 @@ export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', o
         </div>
 
         {/* Center: Live Strategy & Regime Badge */}
-        <div className="hidden md:flex items-center space-x-3 bg-[#090d16] px-3 py-1.5 rounded-lg border border-[#1b2336]">
+        <div className="hidden md:flex items-center space-x-2.5 bg-[#090d16] px-3 py-1.5 rounded-lg border border-[#1b2336]">
           <span className="text-[11px] text-slate-400 uppercase tracking-wider">Regime:</span>
           <span className={`text-xs font-bold font-mono px-2 py-0.5 rounded ${
             status?.market?.regime === 'TRENDING'
@@ -99,7 +99,11 @@ export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', o
           <span className="text-slate-600">|</span>
           <span className="text-[11px] text-slate-400">Strategy:</span>
           <span className="text-xs text-[#00e5ff] font-mono font-bold">
-            {status?.strategy_title || status?.strategy || 'Donchian Breakout'}
+            {status?.strategy_title || 'Donchian Breakout (15m/5m MTF)'}
+          </span>
+          <span className="text-slate-600">|</span>
+          <span className="text-[10px] font-mono font-bold text-amber-300 bg-amber-400/15 px-1.5 py-0.5 rounded border border-amber-400/30">
+            {status?.interval || '15m/5m MTF'}
           </span>
         </div>
 

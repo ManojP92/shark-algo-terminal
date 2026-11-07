@@ -17,6 +17,7 @@ venv/
 dist/
 build/
 *.egg-info/
+!frontend/dist/
 
 # Database files
 data/*.db
