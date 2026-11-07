@@ -419,6 +419,9 @@ def update_sizing(req: SizingRequest):
         f"risk={rm.cfg.risk_per_trade_pct}% cap=${rm.cfg.capital_base} lev={rm.cfg.leverage}x"
     )
 
+    # Persist updated sizing and capital settings to SQLite & state file
+    _executor._save_paper_state()
+
     return {
         "ok": True,
         "sizing": {

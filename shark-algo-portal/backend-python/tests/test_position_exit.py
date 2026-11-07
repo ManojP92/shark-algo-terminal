@@ -19,6 +19,7 @@ def test_paper_close_position():
     ex = Executor()
     ex.set_mode("PAPER")
     initial_wallet = ex.paper_wallet
+    initial_trade_count = len(ex.trade_history)
 
     # Mock open position: LONG 0.001 BTC @ $80,000
     trail = TrailingState(side="LONG", entry=80000.0, best_price=80000.0, trail_sl=78000.0)
@@ -46,7 +47,7 @@ def test_paper_close_position():
     assert ex.rm.state.open_positions == 0
 
     assert ex._running is True  # Engine stays running for next setup!
-    assert len(ex.trade_history) == 1
+    assert len(ex.trade_history) == initial_trade_count + 1
     assert ex.trade_history[0]["pnl"] == 2.0
     assert ex.paper_wallet == round(initial_wallet + 2.0, 2)
 

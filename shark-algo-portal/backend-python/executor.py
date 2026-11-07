@@ -37,6 +37,8 @@ from dotenv import load_dotenv
 
 load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), "..", ".env"))
 
+import json
+import database
 from shark_client import SharkClient
 from risk_manager import RiskManager, RiskConfig
 from telegram_alerts import TelegramAlerter
@@ -149,11 +151,11 @@ class Executor:
         self.tg.paper = True
         self.paper_wallet = float(self.rm.cfg.capital_base)
 
-        # Restore paper wallet balance and history if previously saved
-        self._load_paper_state()
-
         # Apply instrument defaults
         self._apply_instrument_config(self.symbol)
+
+        # Restore paper wallet balance, custom sizing settings and history if previously saved
+        self._load_paper_state()
 
         log.info("Executor starting | MODE=%s | SYMBOL=%s | INTERVAL=%s | STRATEGY=%s",
                  self.mode, self.symbol, INTERVAL, self.strategy_name)
@@ -333,48 +335,122 @@ class Executor:
             entry=pos.entry, exit_=exit_price, pnl=pnl, reason=reason,
         )
 
+        # Record trade in SQLite database (for both PAPER and LIVE modes)
+        try:
+            database.record_trade(trade_record, mode=self.mode)
+        except Exception as db_err:
+            log.warning("Failed to record trade to database: %s", db_err)
+
         self.position = None
-        if self.mode == "PAPER":
-            self._save_paper_state()
+        self._save_paper_state()
 
     def _save_paper_state(self) -> None:
-        """Persist paper wallet balance and trade history to paper_state.json."""
+        """Persist wallet balance, settings, and trade history to SQLite & paper_state.json atomically."""
         try:
+            today = getattr(self, "_stats_date", datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+
+            # 1. Persist to SQLite
+            database.set_state("paper_wallet", round(self.paper_wallet, 2))
+            database.set_state("capital_base", round(self.rm.cfg.capital_base, 2))
+            database.set_state("sizing_mode", self.rm.cfg.sizing_mode)
+            database.set_state("manual_lot_size", self.rm.cfg.manual_lot_size)
+            database.set_state("risk_per_trade_pct", self.rm.cfg.risk_per_trade_pct)
+            database.set_state("leverage", self.rm.cfg.leverage)
+            database.set_state("stats", self._stats)
+            database.set_state("stats_date", today)
+
+            # 2. Atomic write to paper_state.json with temp file + replace
             state_data = {
                 "paper_wallet": round(self.paper_wallet, 2),
+                "capital_base": round(self.rm.cfg.capital_base, 2),
                 "trade_history": self.trade_history,
-                "stats_date": getattr(self, "_stats_date", datetime.now(timezone.utc).strftime("%Y-%m-%d")),
+                "stats_date": today,
                 "stats": self._stats,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
             state_file = os.path.join(os.path.dirname(__file__), "paper_state.json")
-            with open(state_file, "w", encoding="utf-8") as f:
+            tmp_file = state_file + ".tmp"
+            with open(tmp_file, "w", encoding="utf-8") as f:
                 json.dump(state_data, f, indent=2)
+            os.replace(tmp_file, state_file)
         except Exception as err:
-            log.warning("Failed to save paper_state.json: %s", err)
+            log.warning("Failed to save state: %s", err)
 
     def _load_paper_state(self) -> None:
-        """Load paper wallet balance and trade history from paper_state.json if available."""
-        state_file = os.path.join(os.path.dirname(__file__), "paper_state.json")
-        if os.path.exists(state_file):
-            try:
-                with open(state_file, "r", encoding="utf-8") as f:
-                    state_data = json.load(f)
-                saved_wallet = float(state_data.get("paper_wallet", 0.0))
-                if saved_wallet > 0:
-                    self.paper_wallet = saved_wallet
-                    log.info("Restored paper_wallet from paper_state.json: $%.2f", self.paper_wallet)
-                saved_history = state_data.get("trade_history")
-                if isinstance(saved_history, list) and saved_history:
-                    self.trade_history = saved_history
-                    log.info("Restored %d trades from paper_state.json", len(self.trade_history))
-                saved_date = state_data.get("stats_date")
-                today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-                if saved_date == today and isinstance(state_data.get("stats"), dict):
-                    self._stats = state_data["stats"]
-                    self._stats_date = today
-            except Exception as err:
-                log.warning("Failed to load paper_state.json: %s", err)
+        """
+        Load state and historical trades with double-redundancy:
+        1. Primary: SQLite database (data/trades.db)
+        2. Fallback / Migration: paper_state.json
+        """
+        # Ensure SQLite is initialized
+        try:
+            database.init_db()
+        except Exception as e:
+            log.warning("database.init_db() warning: %s", e)
+
+        # 1. Primary: Load from SQLite
+        db_trades = database.get_trade_history(limit=50)
+        if db_trades:
+            self.trade_history = db_trades
+            log.info("Restored %d trades from SQLite database", len(self.trade_history))
+
+        saved_wallet = database.get_state("paper_wallet")
+        if saved_wallet is not None and float(saved_wallet) > 0:
+            self.paper_wallet = float(saved_wallet)
+            log.info("Restored paper_wallet from SQLite: $%.2f", self.paper_wallet)
+
+        saved_capital = database.get_state("capital_base")
+        if saved_capital is not None and float(saved_capital) > 0:
+            self.rm.cfg.capital_base = float(saved_capital)
+            log.info("Restored capital_base from SQLite: $%.2f", self.rm.cfg.capital_base)
+
+        saved_sizing_mode = database.get_state("sizing_mode")
+        if saved_sizing_mode:
+            self.rm.cfg.sizing_mode = str(saved_sizing_mode)
+        saved_lots = database.get_state("manual_lot_size")
+        if saved_lots is not None and float(saved_lots) > 0:
+            self.rm.cfg.manual_lot_size = float(saved_lots)
+        saved_risk = database.get_state("risk_per_trade_pct")
+        if saved_risk is not None and float(saved_risk) > 0:
+            self.rm.cfg.risk_per_trade_pct = float(saved_risk)
+        saved_leverage = database.get_state("leverage")
+        if saved_leverage is not None and int(saved_leverage) > 0:
+            self.rm.cfg.leverage = int(saved_leverage)
+
+        saved_stats_date = database.get_state("stats_date")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        if saved_stats_date == today:
+            saved_stats = database.get_state("stats")
+            if isinstance(saved_stats, dict):
+                self._stats = saved_stats
+                self._stats_date = today
+
+        # 2. Fallback / Migration: if SQLite had no trades, check paper_state.json
+        if not db_trades or saved_wallet is None:
+            state_file = os.path.join(os.path.dirname(__file__), "paper_state.json")
+            if os.path.exists(state_file) and os.path.getsize(state_file) > 0:
+                try:
+                    with open(state_file, "r", encoding="utf-8") as f:
+                        state_data = json.load(f)
+                    json_wallet = float(state_data.get("paper_wallet", 0.0))
+                    if (saved_wallet is None or saved_wallet <= 0) and json_wallet > 0:
+                        self.paper_wallet = json_wallet
+                        database.set_state("paper_wallet", json_wallet)
+                        log.info("Migrated paper_wallet from paper_state.json to SQLite: $%.2f", self.paper_wallet)
+
+                    json_capital = float(state_data.get("capital_base", 0.0))
+                    if (saved_capital is None or saved_capital <= 0) and json_capital > 0:
+                        self.rm.cfg.capital_base = json_capital
+                        database.set_state("capital_base", json_capital)
+
+                    json_history = state_data.get("trade_history")
+                    if not self.trade_history and isinstance(json_history, list) and json_history:
+                        self.trade_history = json_history
+                        for tr in reversed(json_history):
+                            database.record_trade(tr, mode="PAPER")
+                        log.info("Migrated %d trades from paper_state.json to SQLite", len(self.trade_history))
+                except Exception as err:
+                    log.warning("Failed to load paper_state.json fallback: %s", err)
 
     def _ensure_day_reset(self) -> None:
         """Reset daily stats and ensure risk manager state resets at UTC midnight."""
