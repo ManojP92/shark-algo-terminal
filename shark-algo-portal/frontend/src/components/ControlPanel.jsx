@@ -177,7 +177,7 @@ export default function ControlPanel({ status, currentSymbol = 'BTCUSDT', onSymb
             onChange={(e) => handleStrategyChange(e.target.value)}
             className="w-full bg-[#101726] border border-[#1c2a44] rounded-lg p-2 text-xs font-mono font-bold text-white focus:outline-none cursor-pointer"
           >
-            <option value="DONCHIAN">🦈 Donchian Breakout (Trend Following)</option>
+            <option value="DONCHIAN">🦈 Donchian Breakout (15m/5m MTF Trend)</option>
             <option value="BOLLINGER_RSI">📊 Bollinger + RSI (Mean Reversion)</option>
             <option value="SUPERTREND">⚡ Supertrend Momentum (Trend Rider)</option>
             <option value="REGIME_ADAPTIVE">🧠 Regime-Adaptive Hybrid (Multi-Regime)</option>

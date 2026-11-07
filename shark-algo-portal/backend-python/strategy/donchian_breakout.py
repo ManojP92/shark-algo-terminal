@@ -186,6 +186,7 @@ class DonchianBreakoutStrategy:
         self.adx_min        = adx_min
         self.atr_mult_sl    = atr_mult_sl
         self.atr_mult_trail = atr_mult_trail
+        self.name           = "Donchian Breakout (15m/5m MTF)"
 
     # ── Signal generation ────────────────────────────────────────────────────
 
