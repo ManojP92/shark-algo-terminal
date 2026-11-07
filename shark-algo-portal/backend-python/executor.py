@@ -501,25 +501,41 @@ class Executor:
             if not allowed:
                 return
 
-            # ── Spread filter ─────────────────────────────────────────────────
+            # ── Liquidation Cascade / Spread Expansion Guard ─────────────────
             try:
                 book     = self.client.get_orderbook(self.symbol, depth=5)
                 bids     = book.get("b", book.get("bids", []))
                 asks     = book.get("a", book.get("asks", []))
-                if bids and asks:
-                    best_bid = float(bids[0][0])
-                    best_ask = float(asks[0][0])
-                    if not self.rm.spread_ok(best_bid, best_ask):
-                        self._log_event("Spread check failed — order delayed")
-                        return
+                if not bids or not asks:
+                    log.warning("Liquidation cascade guard: orderbook empty/thin — order blocked to prevent slippage")
+                    self._log_event("Liquidation cascade guard: empty book — entry delayed")
+                    return
+                best_bid = float(bids[0][0])
+                best_ask = float(asks[0][0])
+                if not self.rm.spread_ok(best_bid, best_ask):
+                    self._log_event("Spread expansion guard: spread > 0.05% — entry delayed")
+                    return
             except Exception as spread_err:
-                pass
+                log.warning("Liquidation guard: could not verify orderbook spread: %s — blocking entry", spread_err)
+                self._log_event("Spread guard: orderbook check failed — entry delayed")
+                return
 
             # ── Generate signal ───────────────────────────────────────────────
             sig = self.strategy.generate_signal(df)
 
             if sig.signal == "NO_TRADE":
                 return
+
+            # ── 8-Hour Funding Rate Sentiment Filter (Crypto Perpetuals) ───────
+            try:
+                funding_pct = self.client.get_funding_rate(self.symbol)
+                fund_ok, fund_reason = self.rm.funding_rate_ok(sig.signal, funding_pct)
+                if not fund_ok:
+                    log.warning("Funding Rate Sentiment Filter blocked %s: %s", sig.signal, fund_reason)
+                    self._log_event(f"Blocked by Funding Rate Gate: {fund_reason}")
+                    return
+            except Exception as fund_err:
+                log.warning("Funding rate check error (bypassing): %s", fund_err)
 
             # ── Size and enter ────────────────────────────────────────────────
             qty = self.rm.position_size(equity, sig.entry, sig.sl)

@@ -175,6 +175,18 @@ class SharkClient:
         """GET /v1/market/ticker24Hr/{contractPair}"""
         return self._request("GET", f"/v1/market/ticker24Hr/{symbol}", auth=False)
 
+    def get_funding_rate(self, symbol: str = "BTCUSDT") -> float:
+        """Fetch current 8-hour perpetual funding rate as percentage (e.g. 0.01 = +0.01%)."""
+        try:
+            url = f"https://fapi.binance.com/fapi/v1/premiumIndex?symbol={symbol}"
+            r = requests.get(url, timeout=4)
+            if r.status_code == 200:
+                rate_dec = float(r.json().get("lastFundingRate", 0.0))
+                return rate_dec * 100.0  # e.g. 0.0001 -> 0.01%
+        except Exception as err:
+            log.warning("Could not fetch perpetual funding rate: %s", err)
+        return 0.01  # safe default baseline (0.01%)
+
     def get_klines(
         self,
         symbol:     str = "BTCUSDT",
