@@ -43,6 +43,17 @@ class RiskConfig:
     # Funding Rate Sentiment Filter
     funding_max_long_pct:   float = float(os.getenv("FUNDING_MAX_LONG_PCT",   "0.04"))  # max +0.04% funding for longs
     funding_min_short_pct:  float = float(os.getenv("FUNDING_MIN_SHORT_PCT",  "-0.04")) # min -0.04% funding for shorts
+    # Institutional Session Time-of-Day Filter (London & NY Golden Window)
+    session_filter_enabled: bool  = field(
+        default_factory=lambda: os.getenv("SESSION_FILTER_ENABLED", "true").lower() in ("true", "1", "yes")
+    )
+    allowed_hours_utc:      set   = field(
+        default_factory=lambda: {
+            int(h.strip())
+            for h in os.getenv("ALLOWED_HOURS_UTC", "7,8,9,10,11,12,13,14,15,16,17,18,19,20").split(",")
+            if h.strip()
+        }
+    )
     # Lot Sizing & Compounding Settings
     min_qty:                float = 0.001   # Shark Exchange BTC min lot size (0.001 BTC)
     step_size:              float = 0.001   # Order lot increment
@@ -157,7 +168,30 @@ class RiskManager:
             return True
         return False
 
-    def can_trade(self, equity: float = 0.0) -> tuple[bool, str]:
+    def session_ok(self, utc_hour: Optional[int] = None) -> tuple[bool, str]:
+        """
+        Institutional Volume & Trend Session Filter.
+        Checks if current UTC hour is within London & NY overlap/active trading hours.
+        Default allowed: 07:00 to 20:00 UTC (12:30 PM to 01:30 AM IST).
+        Off-hours (Asian chop: 21:00 to 06:00 UTC) are blocked from opening new positions.
+        """
+        if not self.cfg.session_filter_enabled:
+            return True, "SESSION_FILTER_DISABLED"
+
+        current_hour = utc_hour if utc_hour is not None else datetime.now(timezone.utc).hour
+        if current_hour not in self.cfg.allowed_hours_utc:
+            ist_hour = (current_hour + 5) % 24
+            ist_min = 30
+            msg = (
+                f"Session Filter: Current UTC hour {current_hour:02d}:00 (~{ist_hour:02d}:{ist_min:02d} IST) "
+                f"outside allowed trend window (07:00-20:00 UTC / 12:30-01:30 IST) — Trade blocked to avoid chop"
+            )
+            log.warning(msg)
+            return False, msg
+
+        return True, "SESSION_OK"
+
+    def can_trade(self, equity: float = 0.0, utc_hour: Optional[int] = None) -> tuple[bool, str]:
         """
         Master gate — call before attempting any new entry.
 
@@ -178,6 +212,11 @@ class RiskManager:
 
         if self.state.open_positions >= self.cfg.max_concurrent:
             return False, f"Max concurrent positions ({self.cfg.max_concurrent}) reached"
+
+        # Check Institutional Session Filter
+        sess_ok, sess_reason = self.session_ok(utc_hour)
+        if not sess_ok:
+            return False, sess_reason
 
         return True, "OK"
 

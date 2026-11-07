@@ -274,6 +274,81 @@ class DonchianBreakoutStrategy:
             bar_time=bar_time,
         )
 
+    def generate_mtf_signal(self, df_15m: pd.DataFrame, df_5m: pd.DataFrame) -> TradeSignal:
+        """
+        Multi-Timeframe (MTF) Signal Generation:
+        - Macro Filter & Channel Level: 15m Donchian Channel (dc_upper, dc_lower) & 15m ADX momentum filter.
+        - Micro Trigger & Sizing: 5m Candle Close breakout + 5m ATR for stop loss and trailing ratchet.
+        
+        Evaluates the last closed candles:
+          df_15m.iloc[-2] for 15m macro indicators
+          df_5m.iloc[-2] for 5m micro trigger & ATR
+
+        Returns TradeSignal with signal == "LONG", "SHORT", or "NO_TRADE".
+        """
+        df_15m_ind = self.compute_indicators(df_15m)
+        df_5m_ind  = self.compute_indicators(df_5m)
+
+        row_15m = df_15m_ind.iloc[-2]
+        row_5m  = df_5m_ind.iloc[-2]
+
+        close_5m  = float(row_5m["close"])
+        atr_5m    = float(row_5m["atr"])
+        bar_time  = str(row_5m.get("timestamp", ""))
+
+        dc_upper  = float(row_15m["dc_upper"])
+        dc_lower  = float(row_15m["dc_lower"])
+        adx_15m   = float(row_15m["adx"])
+
+        # Guard: indicators not ready (warmup)
+        if any(math.isnan(v) for v in [dc_upper, dc_lower, adx_15m, atr_5m]):
+            return TradeSignal(
+                signal="NO_TRADE", entry=close_5m, sl=0, trail_sl=0,
+                atr=0, adx=0, dc_upper=0, dc_lower=0,
+                reason="Indicators not ready (warmup)", bar_time=bar_time,
+            )
+
+        # 15m ADX momentum filter
+        if adx_15m < self.adx_min:
+            return TradeSignal(
+                signal="NO_TRADE", entry=close_5m, sl=0, trail_sl=0,
+                atr=atr_5m, adx=adx_15m, dc_upper=dc_upper, dc_lower=dc_lower,
+                reason=f"15m ADX {adx_15m:.2f} < {self.adx_min} — sideways market, skip",
+                bar_time=bar_time,
+            )
+
+        sl_dist    = self.atr_mult_sl * atr_5m
+        trail_dist = self.atr_mult_trail * atr_5m
+
+        # LONG breakout: 5m close above 15m DC upper
+        if close_5m > dc_upper:
+            sl       = close_5m - sl_dist
+            trail_sl = close_5m - trail_dist
+            return TradeSignal(
+                signal="LONG", entry=close_5m, sl=sl, trail_sl=trail_sl,
+                atr=atr_5m, adx=adx_15m, dc_upper=dc_upper, dc_lower=dc_lower,
+                reason=f"5m Close {close_5m} > 15m DC Upper {dc_upper:.2f} | 15m ADX {adx_15m:.2f} | 5m ATR {atr_5m:.2f}",
+                bar_time=bar_time,
+            )
+
+        # SHORT breakout: 5m close below 15m DC lower
+        if close_5m < dc_lower:
+            sl       = close_5m + sl_dist
+            trail_sl = close_5m + trail_dist
+            return TradeSignal(
+                signal="SHORT", entry=close_5m, sl=sl, trail_sl=trail_sl,
+                atr=atr_5m, adx=adx_15m, dc_upper=dc_upper, dc_lower=dc_lower,
+                reason=f"5m Close {close_5m} < 15m DC Lower {dc_lower:.2f} | 15m ADX {adx_15m:.2f} | 5m ATR {atr_5m:.2f}",
+                bar_time=bar_time,
+            )
+
+        return TradeSignal(
+            signal="NO_TRADE", entry=close_5m, sl=0, trail_sl=0,
+            atr=atr_5m, adx=adx_15m, dc_upper=dc_upper, dc_lower=dc_lower,
+            reason=f"5m Price {close_5m} inside 15m DC [{dc_lower:.2f}, {dc_upper:.2f}]",
+            bar_time=bar_time,
+        )
+
     # ── Trailing stop update ─────────────────────────────────────────────────
 
     def update_trailing_stop(

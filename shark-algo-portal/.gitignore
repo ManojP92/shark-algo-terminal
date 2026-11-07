@@ -23,6 +23,8 @@ data/*.db
 data/*.sqlite3
 *.db-shm
 *.db-wal
+paper_state.json
+backend-python/paper_state.json
 
 # Logs
 logs/*.log

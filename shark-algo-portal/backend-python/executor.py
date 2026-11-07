@@ -52,6 +52,9 @@ logging.basicConfig(
 # ── Config ────────────────────────────────────────────────────────────────────
 SYMBOL          = os.getenv("TRADING_PAIR", "BTCUSDT")
 INTERVAL        = os.getenv("STRATEGY_INTERVAL", "15m")
+MTF_ENABLED     = os.getenv("MTF_ENABLED", "true").lower() in ("true", "1", "yes")
+MACRO_INTERVAL  = os.getenv("MACRO_INTERVAL", "15m")
+MICRO_INTERVAL  = os.getenv("MICRO_INTERVAL", "5m")
 POLL_SECONDS    = int(os.getenv("POLL_SECONDS", "30"))   # check frequency
 KLINES_LIMIT    = 300    # enough for warmup (DC=25, ADX=14, ATR=14 → need ~60+)
 NODE_URL        = os.getenv("NODE_URL", "http://localhost:3001")
@@ -209,9 +212,10 @@ class Executor:
 
     # ── Data fetching ─────────────────────────────────────────────────────────
 
-    def fetch_klines(self) -> pd.DataFrame:
+    def fetch_klines(self, interval: Optional[str] = None) -> pd.DataFrame:
         """Fetch klines from Node data bridge for active symbol."""
-        url  = f"{NODE_URL}/api/klines/{INTERVAL}?pair={self.symbol}&limit={KLINES_LIMIT}"
+        tf   = interval or INTERVAL
+        url  = f"{NODE_URL}/api/klines/{tf}?pair={self.symbol}&limit={KLINES_LIMIT}"
         resp = requests.get(url, timeout=15)
         resp.raise_for_status()
         body = resp.json()
@@ -436,35 +440,74 @@ class Executor:
     def step(self) -> None:
         """Single iteration of the trading loop — called every POLL_SECONDS."""
         try:
-            df     = self.fetch_klines()
-            equity = self.get_equity()
-            self._ensure_day_reset()
-            close  = float(df.iloc[-2]["close"])   # last closed bar
-            mark_price = float(df.iloc[-1]["close"]) # latest forming bar close
+            if MTF_ENABLED:
+                df_15m = self.fetch_klines(interval=MACRO_INTERVAL)
+                df_5m  = self.fetch_klines(interval=MICRO_INTERVAL)
+                equity = self.get_equity()
+                self._ensure_day_reset()
 
-            # Compute indicators
-            df_ind = self.strategy.compute_indicators(df)
-            last_closed = df_ind.iloc[-2]
-            atr_val = float(last_closed["atr"]) if not pd.isna(last_closed["atr"]) else 0.0
-            adx_val = float(last_closed["adx"]) if not pd.isna(last_closed["adx"]) else 0.0
-            dc_up = float(last_closed["dc_upper"]) if not pd.isna(last_closed["dc_upper"]) else 0.0
-            dc_lo = float(last_closed["dc_lower"]) if not pd.isna(last_closed["dc_lower"]) else 0.0
+                close  = float(df_5m.iloc[-2]["close"])      # last closed 5m bar
+                mark_price = float(df_5m.iloc[-1]["close"]) # latest forming 5m bar close
 
-            regime = "UNCLEAR"
-            if adx_val >= 25.0:
-                regime = "TRENDING"
-            elif adx_val < 20.0:
-                regime = "RANGING"
+                # Compute indicators on both timeframes
+                df_15m_ind = self.strategy.compute_indicators(df_15m)
+                df_5m_ind  = self.strategy.compute_indicators(df_5m)
 
-            self.latest_market = {
-                "mark_price": mark_price,
-                "atr": round(atr_val, 2),
-                "adx": round(adx_val, 2),
-                "dc_upper": round(dc_up, 2),
-                "dc_lower": round(dc_lo, 2),
-                "regime": regime,
-                "timestamp": str(last_closed.get("timestamp", ""))
-            }
+                last_15m = df_15m_ind.iloc[-2]
+                last_5m  = df_5m_ind.iloc[-2]
+
+                atr_val = float(last_5m["atr"]) if not pd.isna(last_5m["atr"]) else 0.0
+                adx_val = float(last_15m["adx"]) if not pd.isna(last_15m["adx"]) else 0.0
+                dc_up   = float(last_15m["dc_upper"]) if not pd.isna(last_15m["dc_upper"]) else 0.0
+                dc_lo   = float(last_15m["dc_lower"]) if not pd.isna(last_15m["dc_lower"]) else 0.0
+
+                regime = "UNCLEAR"
+                if adx_val >= 25.0:
+                    regime = "TRENDING"
+                elif adx_val < 20.0:
+                    regime = "RANGING"
+
+                self.latest_market = {
+                    "mark_price": mark_price,
+                    "atr": round(atr_val, 2),
+                    "adx": round(adx_val, 2),
+                    "dc_upper": round(dc_up, 2),
+                    "dc_lower": round(dc_lo, 2),
+                    "regime": regime,
+                    "timeframe": f"{MACRO_INTERVAL}/{MICRO_INTERVAL} MTF",
+                    "timestamp": str(last_5m.get("timestamp", ""))
+                }
+            else:
+                df     = self.fetch_klines(interval=INTERVAL)
+                equity = self.get_equity()
+                self._ensure_day_reset()
+                close  = float(df.iloc[-2]["close"])
+                mark_price = float(df.iloc[-1]["close"])
+
+                # Compute indicators
+                df_ind = self.strategy.compute_indicators(df)
+                last_closed = df_ind.iloc[-2]
+                atr_val = float(last_closed["atr"]) if not pd.isna(last_closed["atr"]) else 0.0
+                adx_val = float(last_closed["adx"]) if not pd.isna(last_closed["adx"]) else 0.0
+                dc_up   = float(last_closed["dc_upper"]) if not pd.isna(last_closed["dc_upper"]) else 0.0
+                dc_lo   = float(last_closed["dc_lower"]) if not pd.isna(last_closed["dc_lower"]) else 0.0
+
+                regime = "UNCLEAR"
+                if adx_val >= 25.0:
+                    regime = "TRENDING"
+                elif adx_val < 20.0:
+                    regime = "RANGING"
+
+                self.latest_market = {
+                    "mark_price": mark_price,
+                    "atr": round(atr_val, 2),
+                    "adx": round(adx_val, 2),
+                    "dc_upper": round(dc_up, 2),
+                    "dc_lower": round(dc_lo, 2),
+                    "regime": regime,
+                    "timeframe": INTERVAL,
+                    "timestamp": str(last_closed.get("timestamp", ""))
+                }
 
             # ── If position is open, check exit ──────────────────────────────
             if self.position is not None:
@@ -496,7 +539,7 @@ class Executor:
 
                 return   # never enter a new trade while one is open
 
-            # ── Check circuit breakers ────────────────────────────────────────
+            # ── Check circuit breakers & session filter ───────────────────────
             allowed, reason = self.rm.can_trade(equity)
             if not allowed:
                 return
@@ -521,7 +564,10 @@ class Executor:
                 return
 
             # ── Generate signal ───────────────────────────────────────────────
-            sig = self.strategy.generate_signal(df)
+            if MTF_ENABLED:
+                sig = self.strategy.generate_mtf_signal(df_15m, df_5m)
+            else:
+                sig = self.strategy.generate_signal(df)
 
             if sig.signal == "NO_TRADE":
                 return
@@ -634,7 +680,8 @@ class Executor:
         return {
             "mode":        self.mode,
             "symbol":      self.symbol,
-            "interval":    INTERVAL,
+            "interval":    f"{MACRO_INTERVAL}/{MICRO_INTERVAL} MTF" if MTF_ENABLED else INTERVAL,
+            "mtf_enabled": MTF_ENABLED,
             "instruments": INSTRUMENT_CONFIGS,
             "running":     self._running,
             "strategy":        self.strategy_name,
@@ -678,6 +725,8 @@ class Executor:
                 "daily_limit_pct":    self.rm.cfg.daily_loss_cap_pct,
                 "halted":             self.rm.state.halted,
                 "cooldown_until":     self.rm.state.cooldown_until_ts,
+                "session_filter_enabled": self.rm.cfg.session_filter_enabled,
+                "session_active":     self.rm.session_ok()[0],
             },
             "sizing": {
                 "sizing_mode":        self.rm.cfg.sizing_mode,
