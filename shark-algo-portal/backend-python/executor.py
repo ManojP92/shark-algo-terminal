@@ -157,6 +157,14 @@ class Executor:
         # Restore paper wallet balance, custom sizing settings and history if previously saved
         self._load_paper_state()
 
+        # Initialize Multi-Tenant Dispatcher
+        try:
+            from dispatcher import TenantDispatcher
+            self.dispatcher = TenantDispatcher()
+        except Exception as disp_err:
+            log.warning("Could not initialize TenantDispatcher in Executor: %s", disp_err)
+            self.dispatcher = None
+
         log.info("Executor starting | MODE=%s | SYMBOL=%s | INTERVAL=%s | STRATEGY=%s",
                  self.mode, self.symbol, INTERVAL, self.strategy_name)
         self._log_event(f"Executor initialized in {self.mode} mode for {self.symbol} ({INTERVAL}) with {self.strategy_name}")
@@ -585,6 +593,13 @@ class Executor:
                     "timestamp": str(last_closed.get("timestamp", ""))
                 }
 
+            # ── Multi-Tenant Trailing Ratchets & Exits across active workers ──
+            if getattr(self, "dispatcher", None):
+                try:
+                    self.dispatcher.dispatch_market_update(mark_price, atr_val, self.strategy)
+                except Exception as disp_err:
+                    log.warning("TenantDispatcher market update error: %s", disp_err)
+
             # ── If position is open, check exit ──────────────────────────────
             if self.position is not None:
                 atr_now = atr_val
@@ -685,6 +700,26 @@ class Executor:
 
             self.rm.position_opened()
             self._log_event(f"Opened {sig.signal} {qty} {self.symbol} @ ${sig.entry:.2f} (SL: ${sig.sl:.2f})")
+
+            # ── Broadcast Signal to Multi-Tenant Dispatcher ───────────────────
+            if getattr(self, "dispatcher", None):
+                try:
+                    from events import SignalEvent
+                    sig_event = SignalEvent(
+                        symbol=self.symbol,
+                        action=sig.signal,
+                        entry=sig.entry,
+                        sl=sig.sl,
+                        trail_sl=sig.trail_sl,
+                        atr=sig.atr,
+                        adx=sig.adx,
+                        reason=sig.reason,
+                        dc_upper=sig.dc_upper,
+                        dc_lower=sig.dc_lower,
+                    )
+                    self.dispatcher.dispatch_signal(sig_event)
+                except Exception as bcast_err:
+                    log.warning("TenantDispatcher broadcast error: %s", bcast_err)
 
             self.tg.trade_opened(
                 side=sig.signal, symbol=self.symbol, qty=qty,

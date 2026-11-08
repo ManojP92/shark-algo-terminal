@@ -6,6 +6,7 @@ import PositionWidget from './components/PositionWidget';
 import ControlPanel from './components/ControlPanel';
 import TradeLedger from './components/TradeLedger';
 import BacktestModal from './components/BacktestModal';
+import TenantManagerModal from './components/TenantManagerModal';
 import LoginPage from './components/LoginPage';
 
 export default function App() {
@@ -13,6 +14,8 @@ export default function App() {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const [status, setStatus] = useState(null);
   const [connected, setConnected] = useState(false);
+  const [selectedTenantId, setSelectedTenantId] = useState(null);
+  const [isTenantManagerOpen, setIsTenantManagerOpen] = useState(false);
   const wsRef = useRef(null);
 
   // Check 2FA Auth Session on initial load
@@ -62,7 +65,8 @@ export default function App() {
   const fetchStatus = useCallback(async () => {
     if (!isAuthenticated) return;
     try {
-      const res = await fetch('/api/status');
+      const url = selectedTenantId ? `/api/status?tenant_id=${encodeURIComponent(selectedTenantId)}` : '/api/status';
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setStatus(data);
@@ -70,7 +74,7 @@ export default function App() {
     } catch (e) {
       console.warn('REST status fetch failed:', e);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, selectedTenantId]);
 
   // WebSocket lifecycle
   useEffect(() => {
@@ -251,6 +255,9 @@ export default function App() {
         status={status}
         connected={connected}
         currentSymbol={activeSymbol}
+        activeTenantId={selectedTenantId}
+        onClearTenantFilter={() => setSelectedTenantId(null)}
+        onOpenTenants={() => setIsTenantManagerOpen(true)}
         onSymbolChange={handleSymbolChange}
         onModeChange={handleModeChange}
         onOpenBacktest={() => setIsBacktestOpen(true)}
@@ -336,6 +343,14 @@ export default function App() {
         isOpen={isBacktestOpen}
         onClose={() => setIsBacktestOpen(false)}
         defaultPair={activeSymbol}
+      />
+
+      {/* Multi-Tenant Account & Investor Manager Cockpit */}
+      <TenantManagerModal
+        isOpen={isTenantManagerOpen}
+        onClose={() => setIsTenantManagerOpen(false)}
+        activeTenantId={selectedTenantId}
+        onSelectTenant={(tenantId) => setSelectedTenantId(tenantId)}
       />
     </div>
   );

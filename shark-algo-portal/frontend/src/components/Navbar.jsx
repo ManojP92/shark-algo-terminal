@@ -1,7 +1,21 @@
 import React from 'react';
-import { Activity, ShieldAlert, Play, Pause, Zap, Wifi, WifiOff, Sparkles, Wallet, Lock } from 'lucide-react';
+import { Activity, ShieldAlert, Play, Pause, Zap, Wifi, WifiOff, Sparkles, Wallet, Lock, Users, X } from 'lucide-react';
 
-export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', onSymbolChange, onModeChange, onOpenBacktest, onPause, onResume, onFlatten, onLogout }) {
+export default function Navbar({ 
+  status, 
+  connected, 
+  currentSymbol = 'BTCUSDT', 
+  onSymbolChange, 
+  onModeChange, 
+  onOpenBacktest, 
+  onOpenTenants,
+  activeTenantId,
+  onClearTenantFilter,
+  onPause, 
+  onResume, 
+  onFlatten, 
+  onLogout 
+}) {
   const isRunning = status?.running && !status?.paused;
   const isHalted = status?.risk?.halted;
   const isLive = status?.mode === 'LIVE';
@@ -109,6 +123,21 @@ export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', o
 
         {/* Right: Mode & Execution Controls */}
         <div className="flex items-center space-x-3">
+          {/* Active Client Filter Pill */}
+          {activeTenantId && activeTenantId !== 'tenant_default_admin' && (
+            <div className="flex items-center space-x-1.5 px-2.5 py-1 bg-[#00e5ff]/15 border border-[#00e5ff]/40 rounded text-xs font-mono text-[#00e5ff]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#00e5ff] animate-pulse" />
+              <span className="font-bold">Client: {status?.email || activeTenantId.slice(0, 8)}</span>
+              <button
+                onClick={onClearTenantFilter}
+                className="p-0.5 hover:bg-[#00e5ff]/25 rounded text-[#00e5ff] transition cursor-pointer"
+                title="Return to Master Terminal overview"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </div>
+          )}
+
           {/* Wallet Balance Pill */}
           <div className="flex items-center space-x-1.5 px-3 py-1 bg-[#090d16] border border-[#1d2942] rounded text-xs font-mono shadow-sm">
             <Wallet className="w-3.5 h-3.5 text-[#00e5ff]" />
@@ -138,6 +167,16 @@ export default function Navbar({ status, connected, currentSymbol = 'BTCUSDT', o
           >
             <span className={`w-1.5 h-1.5 rounded-full ${isLive ? 'bg-rose-400 animate-ping' : 'bg-[#ffd600]'}`}></span>
             <span>{isLive ? 'LIVE' : 'PAPER'}</span>
+          </button>
+
+          {/* Multi-Tenant Cockpit Button */}
+          <button
+            onClick={onOpenTenants}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-[#172136] hover:bg-[#202c46] text-[#00e5ff] border border-[#283858] rounded text-xs font-bold font-mono transition cursor-pointer shadow-sm"
+            title="Multi-Tenant Investor & Account Management Cockpit"
+          >
+            <Users className="w-3.5 h-3.5 text-[#00e5ff]" />
+            <span className="hidden sm:inline">Clients</span>
           </button>
 
           {/* Backtest & Monte Carlo Button */}

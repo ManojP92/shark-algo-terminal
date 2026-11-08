@@ -66,7 +66,9 @@ _dispatcher: Optional[TenantDispatcher] = None
 
 
 def get_dispatcher() -> TenantDispatcher:
-    global _dispatcher
+    global _dispatcher, _executor
+    if _executor and getattr(_executor, "dispatcher", None):
+        return _executor.dispatcher
     if _dispatcher is None:
         _dispatcher = TenantDispatcher()
     return _dispatcher
