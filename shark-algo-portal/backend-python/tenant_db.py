@@ -293,6 +293,65 @@ def list_active_tenants(db_path: Optional[str] = None) -> list[dict]:
             conn.close()
 
 
+def list_all_tenants(db_path: Optional[str] = None) -> list[dict]:
+    """List all tenants (including inactive ones) for administrative oversight."""
+    target_path = db_path or get_db_path()
+    with _DB_LOCK:
+        conn = sqlite3.connect(target_path)
+        conn.row_factory = sqlite3.Row
+        try:
+            cursor = conn.cursor()
+            cursor.execute("SELECT id, email, role, mode, is_active, capital_base, risk_per_trade_pct, daily_loss_limit_pct, max_consecutive_losses, sizing_mode, manual_lot_size, leverage, created_at, updated_at FROM tenants ORDER BY created_at ASC;")
+            rows = cursor.fetchall()
+            return [dict(r) for r in rows]
+        finally:
+            conn.close()
+
+
+def update_tenant_config(tenant_id: str, updates: dict, db_path: Optional[str] = None) -> bool:
+    """Update risk envelope, mode, or status for a tenant."""
+    target_path = db_path or get_db_path()
+    allowed_fields = {
+        "mode", "is_active", "capital_base", "risk_per_trade_pct",
+        "daily_loss_limit_pct", "max_consecutive_losses", "sizing_mode",
+        "manual_lot_size", "leverage", "role",
+    }
+    valid_updates = {k: v for k, v in updates.items() if k in allowed_fields}
+    if not valid_updates:
+        return False
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    valid_updates["updated_at"] = now_iso
+
+    set_clause = ", ".join(f"{k} = ?" for k in valid_updates.keys())
+    values = list(valid_updates.values())
+    values.append(tenant_id)
+
+    with _DB_LOCK:
+        conn = sqlite3.connect(target_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(f"UPDATE tenants SET {set_clause} WHERE id = ?;", tuple(values))
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+
+def delete_tenant(tenant_id: str, db_path: Optional[str] = None) -> bool:
+    """Delete a tenant and cascade delete their keys, trades, and state."""
+    target_path = db_path or get_db_path()
+    with _DB_LOCK:
+        conn = sqlite3.connect(target_path)
+        try:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM tenants WHERE id = ?;", (tenant_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+        finally:
+            conn.close()
+
+
 # ── Credential Vault Operations ────────────────────────────────────────────────
 
 def set_tenant_keys(

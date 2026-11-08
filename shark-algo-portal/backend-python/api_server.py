@@ -45,6 +45,8 @@ from risk_manager import RiskManager
 from telegram_alerts import TelegramAlerter
 from executor import Executor, INSTRUMENT_CONFIGS
 from backtester import run_backtest, run_monte_carlo
+import tenant_db
+from dispatcher import TenantDispatcher
 
 log = logging.getLogger("api_server")
 logging.basicConfig(
@@ -60,6 +62,15 @@ PORT     = int(os.getenv("PYTHON_BRIDGE_PORT", "5001"))
 _executor: Optional[Executor] = None
 _executor_thread: Optional[threading.Thread] = None
 _paused = False
+_dispatcher: Optional[TenantDispatcher] = None
+
+
+def get_dispatcher() -> TenantDispatcher:
+    global _dispatcher
+    if _dispatcher is None:
+        _dispatcher = TenantDispatcher()
+    return _dispatcher
+
 
 # ── FastAPI app ───────────────────────────────────────────────────────────────
 app = FastAPI(
@@ -81,9 +92,22 @@ app.add_middleware(
 # ══════════════════════════════════════════════════════════════════════════════
 
 @app.get("/api/status")
-def get_status():
+def get_status(tenant_id: Optional[str] = None):
     """Full bot status: mode, position, circuit breaker state, daily stats."""
     global _executor
+    if tenant_id:
+        dispatcher = get_dispatcher()
+        mark_price = _executor.latest_market.get("mark_price", 0.0) if _executor else 0.0
+        st = dispatcher.get_tenant_status(tenant_id, mark_price=mark_price)
+        if st:
+            st["running"] = _executor._running if _executor else True
+            st["paused"] = _paused
+            st["symbol"] = _executor.symbol if _executor else "BTCUSDT"
+            st["market"] = _executor.latest_market if _executor else {}
+            st["interval"] = _executor.get_status().get("interval", "15m/5m MTF") if _executor else "15m/5m MTF"
+            st["mtf_enabled"] = True
+            return st
+
     if _executor is None:
         return {"running": False, "paused": _paused, "position": None, "stats": {}}
     status = _executor.get_status()
@@ -436,6 +460,123 @@ def update_sizing(req: SizingRequest):
             "paper_wallet":       _executor.paper_wallet,
         }
     }
+
+
+# ── Multi-Tenant Management Endpoints ─────────────────────────────────────────
+
+class TenantRegisterRequest(BaseModel):
+    email: str
+    password: str
+    role: Optional[str] = "CLIENT"
+    mode: Optional[str] = "PAPER"
+    capital_base: Optional[float] = 100.0
+    risk_per_trade_pct: Optional[float] = 1.0
+
+
+class TenantKeysRequest(BaseModel):
+    api_key: str
+    api_secret: str
+    exchange: Optional[str] = "SHARK"
+    nickname: Optional[str] = "Default API Key"
+
+
+class TenantConfigUpdateRequest(BaseModel):
+    mode: Optional[str] = None
+    is_active: Optional[bool] = None
+    capital_base: Optional[float] = None
+    risk_per_trade_pct: Optional[float] = None
+    daily_loss_limit_pct: Optional[float] = None
+    max_consecutive_losses: Optional[int] = None
+    sizing_mode: Optional[str] = None
+    manual_lot_size: Optional[float] = None
+    leverage: Optional[int] = None
+    role: Optional[str] = None
+
+
+@app.get("/api/tenants")
+def list_tenants():
+    """Retrieve list of all registered tenant accounts."""
+    tenants = tenant_db.list_all_tenants()
+    return {"ok": True, "count": len(tenants), "tenants": tenants}
+
+
+@app.post("/api/tenants/register")
+def register_tenant(req: TenantRegisterRequest):
+    """Register a new isolated tenant account with customized capital and risk envelope."""
+    existing = tenant_db.get_tenant_by_email(req.email)
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Email '{req.email}' is already registered.")
+
+    tenant = tenant_db.create_tenant(
+        email=req.email,
+        password=req.password,
+        role=req.role or "CLIENT",
+        mode=req.mode or "PAPER",
+        capital_base=req.capital_base or 100.0,
+        risk_per_trade_pct=req.risk_per_trade_pct or 1.0,
+    )
+    get_dispatcher().sync_tenants()
+    return {"ok": True, "tenant": tenant}
+
+
+@app.get("/api/tenants/{tenant_id}/status")
+def get_tenant_status_endpoint(tenant_id: str):
+    """Fetch real-time metrics, wallet, position and trade history for a tenant."""
+    dispatcher = get_dispatcher()
+    mark_price = _executor.latest_market.get("mark_price", 0.0) if _executor else 0.0
+    st = dispatcher.get_tenant_status(tenant_id, mark_price=mark_price)
+    if not st:
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id}' not found.")
+    return {"ok": True, "status": st}
+
+
+@app.get("/api/tenants/{tenant_id}/trades")
+def get_tenant_trades_endpoint(tenant_id: str, limit: int = 50):
+    """Retrieve isolated trade ledger for a tenant."""
+    trades = tenant_db.get_tenant_trades(tenant_id, limit=limit)
+    return {"ok": True, "tenant_id": tenant_id, "trades": trades}
+
+
+@app.post("/api/tenants/{tenant_id}/keys")
+def set_tenant_keys_endpoint(tenant_id: str, req: TenantKeysRequest):
+    """Encrypt and store exchange credentials in AES-256 vault for a tenant."""
+    tenant = tenant_db.get_tenant_by_id(tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id}' not found.")
+
+    tenant_db.set_tenant_keys(
+        tenant_id=tenant_id,
+        api_key=req.api_key,
+        api_secret=req.api_secret,
+        exchange=req.exchange or "SHARK",
+        nickname=req.nickname or "Default API Key",
+    )
+    return {"ok": True, "tenant_id": tenant_id, "message": "API keys encrypted and stored in vault."}
+
+
+@app.post("/api/tenants/{tenant_id}/config")
+def update_tenant_config_endpoint(tenant_id: str, req: TenantConfigUpdateRequest):
+    """Update risk limits, mode (PAPER/LIVE), or status for a tenant."""
+    tenant = tenant_db.get_tenant_by_id(tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail=f"Tenant '{tenant_id}' not found.")
+
+    updates = {k: v for k, v in req.model_dump().items() if v is not None}
+    updated = tenant_db.update_tenant_config(tenant_id, updates)
+    if not updated:
+        raise HTTPException(status_code=400, detail="No valid configuration updates provided.")
+
+    get_dispatcher().sync_tenants()
+    return {"ok": True, "tenant_id": tenant_id, "updated": updates}
+
+
+@app.post("/api/tenants/{tenant_id}/close")
+def close_tenant_position_endpoint(tenant_id: str):
+    """Manually close position strictly for the specified tenant."""
+    dispatcher = get_dispatcher()
+    mark_price = _executor.latest_market.get("mark_price", 0.0) if _executor else 0.0
+    res = dispatcher.close_tenant_position(tenant_id, reason="Dashboard Tenant Manual Close", mark_price=mark_price)
+    return {"ok": True, "result": res}
 
 
 # ── Backtesting & Monte Carlo ────────────────────────────────────────────────

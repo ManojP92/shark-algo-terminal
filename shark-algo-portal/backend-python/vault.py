@@ -22,6 +22,12 @@ log = logging.getLogger("vault")
 _DEFAULT_PEPPER = "shark-algo-master-pepper-seed-2026-btc-usd"
 
 
+def generate_master_key() -> str:
+    """Generate a random 32-byte master key string."""
+    import secrets
+    return secrets.token_hex(32)
+
+
 def _derive_fernet_key(master_secret: Optional[str] = None) -> bytes:
     """
     Derives a deterministic 32-byte URL-safe base64-encoded Fernet key
